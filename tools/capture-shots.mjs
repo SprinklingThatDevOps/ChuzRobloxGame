@@ -13,18 +13,18 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
 
 export const SHOTS = [
-	{ name: "entrance", pos: [0, 24, 128], target: [0, 30, 200], caption: "The gate on the south side of the park" },
+	{ name: "entrance", pos: [0, 30, 118], target: [0, 34, 194], caption: "The gate on the south side of the park" },
 	{ name: "midway", pos: [0, 22, 176], target: [0, 14, 60], caption: "Stall row on the main avenue" },
 	{ name: "clocktower", pos: [66, 30, 68], target: [0, 44, 0], caption: "The Hollow Hour Clock, stopped at 3:33" },
 	{ name: "ferriswheel", pos: [26, 40, -22], target: [0, 66, -156], caption: "The Wheel of Hollow Hours" },
 	{ name: "carousel", pos: [128, 24, 34], target: [128, 18, -46], caption: "Carousel of Borrowed Faces" },
 	{ name: "bigtop", pos: [-136, 48, 108], target: [-136, 32, -40], caption: "The Big Top" },
-	{ name: "funhouse", pos: [-118, 32, 248], target: [-118, 28, 154], caption: "Hall of Borrowed Faces" },
+	{ name: "funhouse", pos: [-118, 26, 208], target: [-118, 26, 156], fov: 72, caption: "Hall of Borrowed Faces" },
 	{ name: "pier", pos: [-74, 24, -160], target: [-152, 8, -160], caption: "The pier and the Tunnel of Love" },
 	{ name: "dodgems", pos: [124, 26, 188], target: [124, 12, 116], caption: "Dodge Me" },
 	{ name: "generator", pos: [150, 22, -66], target: [156, 8, -146], caption: "The generator yard" },
 	{ name: "lobby", pos: [0, 292, 1308], target: [0, 272, 1200], caption: "The Ticket Hall" },
-	{ name: "aerial", pos: [170, 190, 280], target: [0, 18, -40], caption: "The whole park" },
+	{ name: "aerial", pos: [128, 118, 208], target: [-24, 26, -52], caption: "The whole park" },
 ];
 
 const args = Object.fromEntries(

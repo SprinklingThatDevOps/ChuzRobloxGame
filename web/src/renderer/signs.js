@@ -50,10 +50,13 @@ export function makeSignMesh(part, uniforms) {
 	mesh.renderOrder = 2;
 
 	// Orient the quad to the chosen face, then push it out past the surface.
+	// Matrix4.lookAt derives its +Z from (eye - target), and a PlaneGeometry
+	// faces its own +Z, so the outward normal has to be the *eye* — passing it
+	// as the target points every sign into the board it is painted on.
 	const normal = new THREE.Vector3(...face.normal);
 	const up = new THREE.Vector3(...face.up);
 	const quaternion = new THREE.Quaternion().setFromRotationMatrix(
-		new THREE.Matrix4().lookAt(new THREE.Vector3(), normal, up),
+		new THREE.Matrix4().lookAt(normal, new THREE.Vector3(), up),
 	);
 	mesh.quaternion.copy(quaternion);
 	mesh.position.copy(normal).multiplyScalar(depth / 2 + 0.06);
@@ -65,6 +68,11 @@ export function makeSignMesh(part, uniforms) {
 	}
 	mesh.position.add(new THREE.Vector3(part.pos[0], part.pos[1], part.pos[2]));
 	return mesh;
+}
+
+/** Lift a linear colour channel halfway to white, in 0-255 space. */
+function channel(value) {
+	return Math.round(255 * Math.min(1, value + (1 - value) * 0.45));
 }
 
 function getTexture(text, colorRgb, aspect) {
@@ -97,15 +105,18 @@ function getTexture(text, colorRgb, aspect) {
 		fontSize -= 4;
 	}
 
+	// Glow first, then a brighter core on top. The core is a lightened version
+	// of the sign colour rather than white: a white core plus bloom turns every
+	// sign into an unreadable slab of light the moment you walk up to it.
+	const core = `rgb(${channel(color.r)}, ${channel(color.g)}, ${channel(color.b)})`;
 	lines.forEach((line, i) => {
 		const y = lineHeight * (i + 0.5);
 		ctx.shadowColor = css;
-		ctx.shadowBlur = fontSize * 0.55;
+		ctx.shadowBlur = fontSize * 0.32;
 		ctx.fillStyle = css;
 		ctx.fillText(line, width / 2, y);
-		// Second pass to build up a hot core inside the glow.
-		ctx.shadowBlur = fontSize * 0.2;
-		ctx.fillStyle = "#fff8ff";
+		ctx.shadowBlur = 0;
+		ctx.fillStyle = core;
 		ctx.fillText(line, width / 2, y);
 	});
 
