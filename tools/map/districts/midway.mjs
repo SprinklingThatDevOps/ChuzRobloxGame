@@ -45,7 +45,81 @@ export function buildMidway(b, rng) {
 	}
 
 	buildStringLights(b, rng);
+	buildLampPosts(b, rng);
 	buildStreetFurniture(b, rng);
+}
+
+/**
+ * Sodium lamp posts along both avenues and around the park edge.
+ * These are the neutral key lights that give the buildings their form.
+ */
+function buildLampPosts(b, rng) {
+	const { avenue, crossAvenue, plaza } = LAYOUT;
+	const spots = [];
+	for (let z = avenue.toZ + 10; z < avenue.fromZ; z += 36) {
+		spots.push([-avenue.halfWidth - 3, z]);
+		spots.push([avenue.halfWidth + 3, z]);
+	}
+	for (let x = crossAvenue.fromX + 24; x < crossAvenue.toX; x += 40) {
+		if (Math.abs(x) < plaza.radius + 6) continue;
+		spots.push([x, crossAvenue.halfWidth + 3]);
+	}
+	// Corner posts so the quiet quarters of the park are not pitch black.
+	for (const [x, z] of [
+		[-120, -110], [120, -110], [-160, 60], [160, 60], [-70, -140], [70, 60], [-60, 170], [60, 170],
+	]) {
+		spots.push([x, z]);
+	}
+
+	b.inGroup("LampPosts", () => {
+		for (const [x, z] of spots) {
+			const height = 21;
+			b.tube([x, 0, z], [x, height, z], 1, {
+				name: "LampPost",
+				color: PAINT.iron,
+				material: MATERIAL.corroded,
+			});
+			b.box({
+				name: "LampBase",
+				pos: [x, 1.2, z],
+				size: [2.6, 2.4, 2.6],
+				color: PAINT.iron,
+				material: MATERIAL.corroded,
+			});
+			// Swan-neck arm.
+			b.beam([x, height, z], [x + 3.4, height + 1.6, z], 0.7, 0.7, {
+				name: "LampArm",
+				color: PAINT.iron,
+				material: MATERIAL.corroded,
+				canCollide: false,
+			});
+			b.box({
+				name: "LampHood",
+				pos: [x + 4.6, height + 1.4, z],
+				size: [4, 1.2, 4],
+				color: PAINT.ironLight,
+				material: MATERIAL.metal,
+				canCollide: false,
+			});
+			const dying = rng.bool(0.22);
+			b.box({
+				name: "LampLens",
+				pos: [x + 4.6, height + 0.6, z],
+				size: [3.2, 0.5, 3.2],
+				color: dying ? [120, 108, 90] : [255, 226, 178],
+				material: MATERIAL.neon,
+				canCollide: false,
+				castShadow: false,
+			});
+			b.light({
+				pos: [x + 4.6, height - 0.4, z],
+				color: [255, 224, 182],
+				range: 52,
+				brightness: dying ? 0.9 : 2.3,
+				flicker: dying ? rng.float(0.3, 0.7) : undefined,
+			});
+		}
+	});
 }
 
 function buildStall(b, rng, { pos, yaw, spec }) {
@@ -141,7 +215,10 @@ function buildStall(b, rng, { pos, yaw, spec }) {
 			material: MATERIAL.smooth,
 			sign: { text: spec.name, color: spec.accent, face: "Front", scale: 0.7 },
 		});
-		b.light({ pos: at(0, HEIGHTS.stallRoof - 1, 3), color: spec.accent, range: 30, brightness: 2 });
+		// Warm work light under the awning. Coloured light everywhere reads as
+		// soup; the neon needs neutral surfaces to be an accent against.
+		b.light({ pos: at(0, HEIGHTS.stallRoof - 2, 1), color: [255, 224, 186], range: 40, brightness: 2.6 });
+		b.light({ pos: at(0, 7, -7), color: [255, 214, 170], range: 24, brightness: 1.5 });
 
 		// Bulb run along the awning lip.
 		for (let i = -3; i <= 3; i++) {

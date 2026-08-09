@@ -174,29 +174,67 @@ export class MapBuilder {
 
 	/**
 	 * Radial panel cone -- the workhorse for tent roofs and stall awnings.
-	 * Alternating colours give the classic big-top stripe.
+	 *
+	 * Each panel is split into `rings` segments whose width shrinks with the
+	 * radius. A single full-length panel would be a constant-width box, and
+	 * twenty of those pile into each other at the apex; tapering makes them
+	 * tile the cone the way canvas gores actually do.
 	 */
 	coneRoof(center, baseRadius, height, segments, colors, opts = {}) {
-		const apex = [center[0], center[1] + height, center[2]];
-		const slantLen = Math.sqrt(baseRadius * baseRadius + height * height);
-		const panelWidth = (2 * Math.PI * baseRadius) / segments + (opts.overlap ?? 0.6);
+		const rings = opts.rings ?? 3;
+		// The panel's local +X points outward from the apex, so the slope has
+		// to tilt that end *down*.
+		const pitch = -Math.atan2(height, baseRadius) / DEG;
+		const thickness = opts.thickness ?? 0.5;
+
+		// Stop before the apex: the last few percent of a cone is a fistful of
+		// slivers. A solid cap covers it instead.
+		const capFraction = opts.capFraction ?? 0.14;
+
 		for (let i = 0; i < segments; i++) {
 			const angle = ((Math.PI * 2) / segments) * (i + 0.5);
-			const baseP = [center[0] + Math.cos(angle) * baseRadius, center[1], center[2] + Math.sin(angle) * baseRadius];
-			const mid = [(baseP[0] + apex[0]) / 2, (baseP[1] + apex[1]) / 2, (baseP[2] + apex[2]) / 2];
-			const yaw = -angle / DEG;
-			const pitch = Math.atan2(height, baseRadius) / DEG;
-			this.part({
-				name: opts.name ?? "RoofPanel",
-				shape: "box",
-				pos: mid,
-				size: [slantLen, opts.thickness ?? 0.5, panelWidth],
-				rot: [0, yaw, pitch],
-				color: colors[i % colors.length],
-				material: opts.material ?? MATERIAL.fabric,
-				canCollide: opts.canCollide ?? true,
-			});
+			const color = colors[i % colors.length];
+			for (let ring = 0; ring < rings; ring++) {
+				const t0 = (ring / rings) * (1 - capFraction);
+				const t1 = ((ring + 1) / rings) * (1 - capFraction);
+				const r0 = baseRadius * (1 - t0);
+				const r1 = baseRadius * (1 - t1);
+				const y0 = center[1] + height * t0;
+				const y1 = center[1] + height * t1;
+				const midR = (r0 + r1) / 2;
+				const segLength = Math.hypot(r0 - r1, y1 - y0) + 0.3;
+				// Width is taken at the outer edge so neighbouring gores
+				// overlap toward the apex instead of leaving wedge-shaped holes.
+				const width = (2 * Math.PI * r0) / segments + (opts.overlap ?? 0.5);
+				this.part({
+					name: opts.name ?? "RoofPanel",
+					shape: "box",
+					// Alternating hair-thin lift stops overlapping gores from z-fighting.
+					pos: [
+						center[0] + Math.cos(angle) * midR,
+						(y0 + y1) / 2 + (i % 2) * 0.1,
+						center[2] + Math.sin(angle) * midR,
+					],
+					size: [segLength, thickness, Math.max(width, 0.4)],
+					rot: [0, -angle / DEG, pitch],
+					color,
+					material: opts.material ?? MATERIAL.fabric,
+					canCollide: opts.canCollide ?? true,
+				});
+			}
 		}
+
+		const capRadius = baseRadius * capFraction;
+		this.part({
+			name: `${opts.name ?? "Roof"}Cap`,
+			shape: "cyl",
+			pos: [center[0], center[1] + height * (1 - capFraction) + 0.3, center[2]],
+			size: [Math.max(height * capFraction, 0.8), capRadius * 2.2, capRadius * 2.2],
+			rot: [0, 0, 90],
+			color: colors[0],
+			material: opts.material ?? MATERIAL.fabric,
+			canCollide: false,
+		});
 	}
 
 	animator(spec) {

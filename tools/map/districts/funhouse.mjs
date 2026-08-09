@@ -143,19 +143,24 @@ function buildFacade(b, rng, doorCentre, width, doorCol, originX, cell) {
 	const [fx, , fz] = doorCentre;
 	const doorX = originX + doorCol * cell + cell / 2;
 
-	// A vast grinning face; the doorway is the mouth.
+	// A vast grinning face whose mouth is the only way in. The head sits high
+	// enough that the doorway underneath it stays completely clear.
+	const faceY = 31;
+	const faceR = 17;
+	const mouthTop = 14;
+
 	b.box({
 		name: "FacadeBoard",
-		pos: [fx, 17, fz + 2.4],
-		size: [width + 8, 34, 1.6],
+		pos: [fx, 27, fz + 2.4],
+		size: [width + 8, 54, 1.6],
 		color: PAINT.plumDark,
 		material: MATERIAL.wood,
 	});
 	b.part({
 		name: "FaceDisc",
 		shape: "cyl",
-		pos: [doorX, 20, fz + 3.6],
-		size: [1.2, 40, 40],
+		pos: [doorX, faceY, fz + 3.6],
+		size: [1.2, faceR * 2, faceR * 2],
 		rot: [0, 90, 0],
 		color: PAINT.canvasCream,
 		material: MATERIAL.smooth,
@@ -164,7 +169,7 @@ function buildFacade(b, rng, doorCentre, width, doorCol, originX, cell) {
 		b.part({
 			name: "FaceEye",
 			shape: "cyl",
-			pos: [doorX + side * 9, 27, fz + 4.4],
+			pos: [doorX + side * 8.5, faceY + 4.5, fz + 4.4],
 			size: [0.8, 10, 10],
 			rot: [0, 90, 0],
 			color: [250, 250, 255],
@@ -173,18 +178,23 @@ function buildFacade(b, rng, doorCentre, width, doorCol, originX, cell) {
 		b.part({
 			name: "FacePupil",
 			shape: "cyl",
-			pos: [doorX + side * (9 + 1.5), 26.4, fz + 5],
+			pos: [doorX + side * (8.5 + 1.6), faceY + 3.8, fz + 5],
 			size: [0.7, 4.4, 4.4],
 			rot: [0, 90, 0],
 			color: NEON.magenta,
 			material: MATERIAL.neon,
 			castShadow: false,
 		});
-		b.light({ pos: [doorX + side * 9, 27, fz + 7], color: NEON.magenta, range: 26, brightness: 2, flicker: 0.2 });
-		// Painted brow.
+		b.light({
+			pos: [doorX + side * 8.5, faceY + 4.5, fz + 8],
+			color: NEON.magenta,
+			range: 30,
+			brightness: 2.2,
+			flicker: 0.2,
+		});
 		b.box({
 			name: "FaceBrow",
-			pos: [doorX + side * 9, 32.4, fz + 4.4],
+			pos: [doorX + side * 8.5, faceY + 10, fz + 4.4],
 			size: [11, 1.6, 0.6],
 			rot: [0, 0, side * -14],
 			color: [40, 24, 50],
@@ -192,38 +202,54 @@ function buildFacade(b, rng, doorCentre, width, doorCol, originX, cell) {
 			canCollide: false,
 		});
 	}
-	// Grin: an arc of teeth over the doorway.
-	const teeth = 11;
+
+	// Upper teeth hang down over the doorway; two lower ones grow up from the
+	// threshold so you really do walk between them.
+	const teeth = 9;
 	for (let i = 0; i < teeth; i++) {
 		const t = i / (teeth - 1);
-		const a = Math.PI * (0.15 + 0.7 * t);
-		const tx = doorX + Math.cos(a) * 15;
-		const ty = 18 - Math.sin(a) * 4.5;
+		const offset = (t - 0.5) * 20;
+		const drop = 4.6 - Math.abs(t - 0.5) * 4.4;
 		b.box({
 			name: "FaceTooth",
-			pos: [tx, ty, fz + 4.6],
-			size: [2.4, 5.2, 0.7],
-			rot: [0, 0, (Math.cos(a) * 30)],
-			color: i % 3 === 1 ? [190, 180, 170] : [250, 246, 236],
+			pos: [doorX + offset, mouthTop - drop / 2 + 1, fz + 4.6],
+			size: [2.1, drop + 2, 0.8],
+			color: i % 3 === 1 ? [188, 178, 168] : [250, 246, 236],
 			material: MATERIAL.smooth,
 			canCollide: false,
 		});
 	}
-	b.box({
-		name: "MouthDark",
-		pos: [doorX, 8, fz + 3.9],
-		size: [16, 14, 0.5],
-		color: [4, 2, 8],
-		material: MATERIAL.smooth,
-		transparency: 0.15,
-		canCollide: false,
-	});
-	// Doorway framing neon.
 	for (const side of [-1, 1]) {
 		b.box({
+			name: "FaceToothLower",
+			pos: [doorX + side * 7, 2, fz + 4.6],
+			size: [2.1, 4, 0.8],
+			color: [232, 226, 214],
+			material: MATERIAL.smooth,
+			canCollide: false,
+		});
+	}
+	// The dark of the throat, set back so the doorway reads as a hole.
+	b.box({
+		name: "MouthDark",
+		pos: [doorX, 7, fz + 1.4],
+		size: [21, 15, 0.5],
+		color: [3, 2, 6],
+		material: MATERIAL.smooth,
+		canCollide: false,
+	});
+	for (const side of [-1, 1]) {
+		b.box({
+			name: "MouthCorner",
+			pos: [doorX + side * 11.6, 7.5, fz + 3.2],
+			size: [3.4, 16, 2],
+			color: PAINT.plumDark,
+			material: MATERIAL.wood,
+		});
+		b.box({
 			name: "DoorNeon",
-			pos: [doorX + side * 8.4, 7, fz + 4.6],
-			size: [0.6, 15, 0.6],
+			pos: [doorX + side * 10.2, 7, fz + 4.6],
+			size: [0.6, 14, 0.6],
 			color: NEON.violet,
 			material: MATERIAL.neon,
 			canCollide: false,
@@ -232,14 +258,31 @@ function buildFacade(b, rng, doorCentre, width, doorCol, originX, cell) {
 	}
 	b.box({
 		name: "FunhouseSign",
-		pos: [doorX, 37, fz + 3],
-		size: [46, 6.5, 0.6],
+		pos: [doorX, 51, fz + 3],
+		size: [50, 7, 0.6],
 		color: [8, 5, 14],
 		material: MATERIAL.smooth,
 		sign: { text: "HALL OF BORROWED FACES", color: NEON.violet, face: "Front", scale: 0.8 },
 		canCollide: false,
 	});
-	b.light({ pos: [doorX, 12, fz + 12], color: NEON.violet, range: 45, brightness: 2.6 });
+
+	// Uplighters along the base so the facade is not a black wall at range.
+	for (let i = -2; i <= 2; i++) {
+		b.box({
+			name: "FacadeUplight",
+			pos: [fx + i * 22, 1.2, fz + 6],
+			size: [3.4, 2, 2.4],
+			color: PAINT.ironLight,
+			material: MATERIAL.metal,
+		});
+		b.light({
+			pos: [fx + i * 22, 5, fz + 6.5],
+			color: i === 0 ? NEON.violet : [206, 176, 255],
+			range: 46,
+			brightness: 2.2,
+		});
+	}
+	b.light({ pos: [doorX, 10, fz + 14], color: NEON.violet, range: 44, brightness: 2.4 });
 }
 
 /**

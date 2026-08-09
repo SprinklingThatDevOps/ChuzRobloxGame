@@ -22,7 +22,7 @@ export const PAINT = {
 	plum: hex(0x2a1740),
 	plumDark: hex(0x1a0e2a),
 	plumLight: hex(0x3d2359),
-	asphalt: hex(0x1f1b26),
+	asphalt: hex(0x2b2633),
 	boardwalk: hex(0x4a3728),
 	boardwalkDark: hex(0x33251b),
 	rust: hex(0x6b4a3a),

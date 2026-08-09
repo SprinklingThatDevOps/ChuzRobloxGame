@@ -47,6 +47,9 @@ export function buildFerrisWheel(b, rng) {
 						material: MATERIAL.metal,
 						canCollide: false,
 					});
+					if (i % 2 === 1) {
+						b.bulb(p0, NEON.amber, 0.45, { range: 22, brightness: 1.3, light: i % 4 === 1 });
+					}
 				}
 			}
 			b.beam([cx - 40, 6, cz + zOff], [cx + 40, 6, cz + zOff], 1.2, 1.2, {
@@ -118,13 +121,21 @@ export function buildFerrisWheel(b, rng) {
 					color: PAINT.ironLight,
 					material: MATERIAL.metal,
 				});
-				b.tube(pts[i], pts[i + 1], 0.7, {
-					name: "WheelRimNeon",
-					color: NEON_ORDER[i % NEON_ORDER.length],
-					material: MATERIAL.neon,
-					canCollide: false,
-					castShadow: false,
-				});
+				// Neon trim rides just outside the structural rim; tucking it
+				// inside would hide it completely.
+				const outboard = zOff < 0 ? -1.4 : 1.4;
+				b.tube(
+					[pts[i][0], pts[i][1], pts[i][2] + outboard],
+					[pts[i + 1][0], pts[i + 1][1], pts[i + 1][2] + outboard],
+					1,
+					{
+						name: "WheelRimNeon",
+						color: NEON_ORDER[Math.floor(i / 3) % NEON_ORDER.length],
+						material: MATERIAL.neon,
+						canCollide: false,
+						castShadow: false,
+					},
+				);
 			}
 			// Inner tension ring.
 			const innerR = R * 0.42;
@@ -477,13 +488,49 @@ export function buildBigTop(b, rng) {
 		}
 
 		// Roof: two tiers of striped panels plus the crown.
-		b.coneRoof([cx, 26, cz], R + 3, H - 26, 28, [PAINT.canvasRed, PAINT.canvasCream], {
+		b.coneRoof([cx, 26, cz], R + 3, H - 26, 26, [PAINT.canvasRed, PAINT.canvasCream], {
 			name: "TentRoof",
 			thickness: 0.7,
+			rings: 4,
 		});
 		b.coneRoof([cx, H - 4, cz], 12, 12, 16, [PAINT.canvasRed, PAINT.canvasCream], {
 			name: "TentCrown",
 			thickness: 0.5,
+		});
+
+		// Neon piping down every other roof seam, plus floods on the ground
+		// aimed up the canvas. Without these the tent is a black hole at night.
+		const seams = 7;
+		for (let i = 0; i < seams; i++) {
+			const a = ((Math.PI * 2) / seams) * i;
+			const baseP = [cx + Math.cos(a) * (R + 3.4), 26.4, cz + Math.sin(a) * (R + 3.4)];
+			const apex = [cx, H - 4, cz];
+			b.tube(baseP, apex, 0.5, {
+				name: "RoofPiping",
+				color: NEON.amber,
+				material: MATERIAL.neon,
+				canCollide: false,
+				castShadow: false,
+			});
+		}
+		b.neonHoop([cx, 26.6, cz], R + 3.2, 1.1, NEON.amber, 48, { name: "EaveNeon" });
+
+		b.ring([cx, 0, cz], R + 20, 8, (pos, deg, i) => {
+			b.box({
+				name: "TentFloodBase",
+				pos: [pos[0], 1.6, pos[2]],
+				size: [3.4, 3.2, 3.4],
+				rot: [0, -deg, 0],
+				color: PAINT.iron,
+				material: MATERIAL.metal,
+			});
+			b.light({
+				pos: [pos[0] + (cx - pos[0]) * 0.28, 16, pos[2] + (cz - pos[2]) * 0.28],
+				color: i % 3 === 0 ? [255, 216, 176] : [255, 236, 214],
+				range: 78,
+				brightness: 2.1,
+				flicker: i === 5 ? 0.25 : undefined,
+			});
 		});
 
 		// Centre pole and rigging.
@@ -506,10 +553,10 @@ export function buildBigTop(b, rng) {
 		}
 
 		// Guy ropes.
-		b.ring([cx, 0, cz], R + 14, 16, (pos) => {
-			b.tube([cx, H - 8, cz], [pos[0], 0.4, pos[2]], 0.25, {
+		b.ring([cx, 0, cz], R + 14, 10, (pos) => {
+			b.tube([cx, H - 12, cz], [pos[0], 0.4, pos[2]], 0.3, {
 				name: "GuyRope",
-				color: PAINT.bone,
+				color: [58, 46, 36],
 				material: MATERIAL.fabric,
 				canCollide: false,
 				castShadow: false,
@@ -534,7 +581,7 @@ export function buildBigTop(b, rng) {
 		for (const tx of [-14, 14]) {
 			b.tube([cx + tx, 44, cz], [cx + tx, 34, cz], 0.25, {
 				name: "TrapezeRope",
-				color: PAINT.bone,
+				color: [70, 60, 48],
 				material: MATERIAL.fabric,
 				canCollide: false,
 			});
@@ -547,14 +594,14 @@ export function buildBigTop(b, rng) {
 				canCollide: false,
 			});
 		}
-		for (let gx = -20; gx <= 20; gx += 4) {
+		for (let gx = -20; gx <= 20; gx += 5) {
 			b.tube([cx + gx, 30, cz - 20], [cx + gx, 30, cz + 20], 0.12, {
 				name: "SafetyNet",
-				color: PAINT.bone,
+				color: [78, 70, 58],
 				material: MATERIAL.fabric,
 				canCollide: false,
 				castShadow: false,
-				transparency: 0.4,
+				transparency: 0.55,
 			});
 		}
 		b.ring([cx, 0, cz], 30, 6, (pos, deg, i) => {

@@ -7,7 +7,7 @@
  *
  * Output is deterministic: same generator, same bytes.
  */
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -69,9 +69,11 @@ function main() {
 	mkdirSync(dirname(outPath), { recursive: true });
 	writeFileSync(outPath, JSON.stringify(doc));
 
+	// The previsualizer reads the identical documents the Roblox build uses.
 	const webPath = resolve(repoRoot, "web/public/MapData.json");
 	mkdirSync(dirname(webPath), { recursive: true });
 	writeFileSync(webPath, JSON.stringify(doc));
+	copyFileSync(resolve(repoRoot, "config/GameConfig.json"), resolve(repoRoot, "web/public/GameConfig.json"));
 
 	const stats = b.stats();
 	const bytes = JSON.stringify(doc).length;
