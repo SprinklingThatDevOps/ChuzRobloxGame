@@ -7,27 +7,37 @@
 ]]
 
 local Debris = game:GetService("Debris")
-local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
-local RoundLogic = require(game:GetService("ReplicatedStorage").Shared.RoundLogic)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RoundLogic = require(ReplicatedStorage.Shared.RoundLogic)
+local Types = require(ReplicatedStorage.Shared.Types)
 
 local WeaponService = {}
 WeaponService.__index = WeaponService
 
+--[[
+	Everything the weapons need to know about the round, supplied by
+	GameService. `combatants` and `fromCharacter` are what let a bullet find a
+	bot: this file never looks at the Players service, because half the bodies
+	in a solo test do not belong to anyone.
+]]
 export type Hooks = {
-	getRole: (player: Player) -> string,
-	isAlive: (player: Player) -> boolean,
-	onKill: (victim: Player, killer: Player, weapon: string) -> (),
+	getRole: (combatant: Types.Combatant) -> string,
+	isAlive: (combatant: Types.Combatant) -> boolean,
+	onKill: (victim: Types.Combatant, killer: Types.Combatant, weapon: string) -> (),
 	onGunDropped: (position: Vector3, ammo: number) -> (),
-	announce: (player: Player, message: string) -> (),
+	announce: (combatant: Types.Combatant, message: string) -> (),
+	combatants: () -> { Types.Combatant },
+	fromCharacter: (character: Model) -> Types.Combatant?,
+	characterOf: (combatant: Types.Combatant) -> Model?,
 }
 
 export type Service = typeof(setmetatable(
 	{} :: {
 		config: any,
 		hooks: Hooks,
-		state: { [Player]: any },
+		state: { [Types.Combatant]: any },
 		projectiles: { any },
 		connection: RBXScriptConnection?,
 	},
@@ -115,8 +125,8 @@ local function attachToHand(model: Model, character: Model)
 end
 
 function WeaponService.reset(self: Service)
-	for player in self.state do
-		WeaponService.clear(self, player)
+	for combatant in self.state do
+		WeaponService.clear(self, combatant)
 	end
 	self.state = {}
 	for _, projectile in self.projectiles do
@@ -127,8 +137,8 @@ function WeaponService.reset(self: Service)
 	self.projectiles = {}
 end
 
-function WeaponService.clear(_self: Service, player: Player)
-	local character = player.Character
+function WeaponService.clear(self: Service, combatant: Types.Combatant)
+	local character = self.hooks.characterOf(combatant)
 	if not character then
 		return
 	end
@@ -139,14 +149,14 @@ function WeaponService.clear(_self: Service, player: Player)
 	end
 end
 
-function WeaponService.giveKnife(self: Service, player: Player)
-	local character = player.Character
+function WeaponService.giveKnife(self: Service, combatant: Types.Combatant)
+	local character = self.hooks.characterOf(combatant)
 	if not character then
 		return
 	end
-	WeaponService.clear(self, player)
+	WeaponService.clear(self, combatant)
 	attachToHand(buildKnife(), character)
-	self.state[player] = {
+	self.state[combatant] = {
 		weapon = "knife",
 		nextSlash = 0,
 		nextThrow = 0,
@@ -154,14 +164,14 @@ function WeaponService.giveKnife(self: Service, player: Player)
 	}
 end
 
-function WeaponService.giveRevolver(self: Service, player: Player, ammo: number?)
-	local character = player.Character
+function WeaponService.giveRevolver(self: Service, combatant: Types.Combatant, ammo: number?)
+	local character = self.hooks.characterOf(combatant)
 	if not character then
 		return
 	end
-	WeaponService.clear(self, player)
+	WeaponService.clear(self, combatant)
 	attachToHand(buildRevolver(), character)
-	self.state[player] = {
+	self.state[combatant] = {
 		weapon = "revolver",
 		nextShot = 0,
 		ammo = ammo or self.config.weapons.revolver.magazine,
@@ -169,28 +179,33 @@ function WeaponService.giveRevolver(self: Service, player: Player, ammo: number?
 	}
 end
 
-function WeaponService.hasWeapon(self: Service, player: Player, weapon: string): boolean
-	local state = self.state[player]
+function WeaponService.hasWeapon(self: Service, combatant: Types.Combatant, weapon: string): boolean
+	local state = self.state[combatant]
 	return state ~= nil and state.weapon == weapon
 end
 
-function WeaponService.ammoOf(self: Service, player: Player): number
-	local state = self.state[player]
+function WeaponService.ammoOf(self: Service, combatant: Types.Combatant): number
+	local state = self.state[combatant]
 	return if state then state.ammo else 0
 end
 
-local function characterOf(instance: Instance?): (Player?, Model?)
+--[[
+	Walks up from whatever a ray hit to the body that owns it. Bots and players
+	are both plain Models in the workspace, so the lookup goes through
+	GameService's registry instead of the Players service.
+]]
+local function combatantFromHit(self: Service, instance: Instance?): Types.Combatant?
 	local cursor = instance
 	while cursor and cursor ~= workspace do
 		if cursor:IsA("Model") then
-			local player = Players:GetPlayerFromCharacter(cursor)
-			if player then
-				return player, cursor
+			local found = self.hooks.fromCharacter(cursor)
+			if found then
+				return found
 			end
 		end
 		cursor = cursor.Parent
 	end
-	return nil, nil
+	return nil
 end
 
 --[[
@@ -198,8 +213,8 @@ end
 	The arc is generous because chasing someone around a tent pole with a
 	pixel-perfect hitbox is miserable.
 ]]
-function WeaponService.slash(self: Service, player: Player): boolean
-	local state = self.state[player]
+function WeaponService.slash(self: Service, attacker: Types.Combatant): boolean
+	local state = self.state[attacker]
 	if not state or state.weapon ~= "knife" then
 		return false
 	end
@@ -208,7 +223,7 @@ function WeaponService.slash(self: Service, player: Player): boolean
 		return false
 	end
 
-	local character = player.Character
+	local character = self.hooks.characterOf(attacker)
 	local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if not root then
 		return false
@@ -221,14 +236,15 @@ function WeaponService.slash(self: Service, player: Player): boolean
 	local facing = root.CFrame.LookVector
 
 	local hitSomething = false
-	for _, other in Players:GetPlayers() do
-		if other == player or not self.hooks.isAlive(other) then
+	for _, other in self.hooks.combatants() do
+		if other == attacker or not self.hooks.isAlive(other) then
 			continue
 		end
 		if self.hooks.getRole(other) == RoundLogic.Role.Murderer then
 			continue
 		end
-		local otherRoot = other.Character and other.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		local otherCharacter = self.hooks.characterOf(other)
+		local otherRoot = otherCharacter and otherCharacter:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if not otherRoot then
 			continue
 		end
@@ -239,7 +255,7 @@ function WeaponService.slash(self: Service, player: Player): boolean
 		if offset.Unit:Dot(facing) < cosLimit then
 			continue
 		end
-		self.hooks.onKill(other, player, "knife")
+		self.hooks.onKill(other, attacker, "knife")
 		hitSomething = true
 	end
 	return hitSomething
@@ -249,8 +265,8 @@ end
 	Thrown knife: a real projectile the victim can dodge, stepped by hand so
 	the flight path is identical for everyone on the server.
 ]]
-function WeaponService.throwKnife(self: Service, player: Player, direction: Vector3): boolean
-	local state = self.state[player]
+function WeaponService.throwKnife(self: Service, thrower: Types.Combatant, direction: Vector3): boolean
+	local state = self.state[thrower]
 	if not state or state.weapon ~= "knife" then
 		return false
 	end
@@ -258,7 +274,7 @@ function WeaponService.throwKnife(self: Service, player: Player, direction: Vect
 	if now < state.nextThrow then
 		return false
 	end
-	local character = player.Character
+	local character = self.hooks.characterOf(thrower)
 	local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
 	if not root then
 		return false
@@ -274,7 +290,7 @@ function WeaponService.throwKnife(self: Service, player: Player, direction: Vect
 
 	table.insert(self.projectiles, {
 		part = part,
-		owner = player,
+		owner = thrower,
 		velocity = direction.Unit * knife.throwSpeed,
 		life = knife.throwLifetime,
 		gravity = workspace.Gravity * knife.throwGravityScale,
@@ -305,12 +321,12 @@ function WeaponService.stepProjectiles(self: Service, delta: number)
 		local from = projectile.part.Position
 		local step = projectile.velocity * delta
 
-		local ownerCharacter = projectile.owner.Character
+		local ownerCharacter = self.hooks.characterOf(projectile.owner)
 		params.FilterDescendantsInstances = if ownerCharacter then { ownerCharacter, projectile.part } else { projectile.part }
 		local result = workspace:Raycast(from, step, params)
 
 		if result then
-			local victim = characterOf(result.Instance)
+			local victim = combatantFromHit(self, result.Instance)
 			if victim and self.hooks.isAlive(victim) and self.hooks.getRole(victim) ~= RoundLogic.Role.Murderer then
 				self.hooks.onKill(victim, projectile.owner, "knife")
 			end
@@ -328,8 +344,8 @@ end
 	Revolver. A hit on the murderer ends the round; a hit on anyone else ends
 	the shooter. That single rule is what makes an armed player think.
 ]]
-function WeaponService.shoot(self: Service, player: Player, direction: Vector3): boolean
-	local state = self.state[player]
+function WeaponService.shoot(self: Service, shooter: Types.Combatant, direction: Vector3): boolean
+	local state = self.state[shooter]
 	if not state or state.weapon ~= "revolver" then
 		return false
 	end
@@ -338,7 +354,7 @@ function WeaponService.shoot(self: Service, player: Player, direction: Vector3):
 		return false
 	end
 
-	local character = player.Character
+	local character = self.hooks.characterOf(shooter)
 	local head = character and character:FindFirstChild("Head") :: BasePart?
 	if not head then
 		return false
@@ -350,7 +366,7 @@ function WeaponService.shoot(self: Service, player: Player, direction: Vector3):
 	if state.ammo <= 0 then
 		state.nextShot = now + revolver.reloadSeconds
 		state.ammo = revolver.magazine
-		self.hooks.announce(player, "Reloading")
+		self.hooks.announce(shooter, "Reloading")
 	end
 
 	local params = RaycastParams.new()
@@ -363,12 +379,12 @@ function WeaponService.shoot(self: Service, player: Player, direction: Vector3):
 	if not result then
 		return true
 	end
-	local victim = characterOf(result.Instance)
+	local victim = combatantFromHit(self, result.Instance)
 	if not victim or not self.hooks.isAlive(victim) then
 		return true
 	end
 
-	self.hooks.onKill(victim, player, "revolver")
+	self.hooks.onKill(victim, shooter, "revolver")
 	return true
 end
 
@@ -392,14 +408,15 @@ end
 	When an armed player dies their revolver hits the floor, and whoever picks
 	it up becomes the Hero. This is the comeback mechanic.
 ]]
-function WeaponService.dropRevolver(self: Service, player: Player)
-	local state = self.state[player]
+function WeaponService.dropRevolver(self: Service, combatant: Types.Combatant)
+	local state = self.state[combatant]
 	if not state or state.weapon ~= "revolver" then
 		return
 	end
-	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart") :: BasePart?
-	self.state[player] = nil
-	WeaponService.clear(self, player)
+	local character = self.hooks.characterOf(combatant)
+	local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+	self.state[combatant] = nil
+	WeaponService.clear(self, combatant)
 	if not root then
 		return
 	end

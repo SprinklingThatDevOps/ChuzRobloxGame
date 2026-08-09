@@ -1,16 +1,26 @@
 --!strict
 --[[
-	Spawning, appearance and the physical state of a player's body.
+	Spawning, appearance and the physical state of a body.
 
 	Everyone wears the same carnival-goer outfit with a randomised jacket
 	colour, so nobody can be identified by silhouette. The only reliable tell
 	is what somebody is holding.
+
+	This works on Types.Combatant rather than Player: a bot's body has to be
+	spawned, dressed, slowed, hidden and killed by exactly the same code, or
+	the two drift apart and only one of them gets tested.
 ]]
 
-local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Types = require(ReplicatedStorage.Shared.Types)
 
 local CharacterService = {}
 CharacterService.__index = CharacterService
+
+-- A HumanoidRootPart sits this far above the soles on the default R6 rig, so
+-- a spawn point (which is where the feet go) has to be lifted by it.
+local ROOT_OFFSET = 3
 
 local JACKET_COLOURS = {
 	Color3.fromRGB(52, 62, 92),
@@ -26,13 +36,12 @@ local JACKET_COLOURS = {
 export type Service = typeof(setmetatable(
 	{} :: {
 		config: any,
-		onDeath: ((player: Player, character: Model) -> ())?,
 	},
 	CharacterService
 ))
 
 function CharacterService.new(config: any): Service
-	return setmetatable({ config = config, onDeath = nil }, CharacterService) :: any
+	return setmetatable({ config = config }, CharacterService) :: any
 end
 
 local function applyOutfit(character: Model, seed: number)
@@ -49,19 +58,35 @@ local function applyOutfit(character: Model, seed: number)
 	end
 end
 
---[[
-	Puts a player on the ground at `spawnSpec`, loading a fresh body if needed.
-	Returns the character once its parts actually exist.
-]]
-function CharacterService.spawnAt(self: Service, player: Player, spawnSpec: any): Model?
-	local character = player.Character
-	if not character or not character.Parent then
-		player:LoadCharacter()
-		character = player.Character or player.CharacterAdded:Wait()
+function CharacterService.characterOf(_self: Service, combatant: Types.Combatant): Model?
+	if combatant.player then
+		return combatant.player.Character
 	end
-	if not character then
+	return combatant.character
+end
+
+--[[
+	Puts a body on the ground at `spawnSpec`, loading a fresh one if needed.
+
+	A spawn point is where the soles go. The whole rig is moved with PivotTo,
+	and the position is re-asserted a frame later: Roblox finishes its own
+	spawn placement after LoadCharacter returns and will otherwise drag the
+	character back to wherever it thinks the spawn is.
+]]
+function CharacterService.spawnAt(self: Service, combatant: Types.Combatant, spawnSpec: any): Model?
+	local player = combatant.player
+	local character = CharacterService.characterOf(self, combatant)
+
+	if player then
+		if not character or not character.Parent then
+			player:LoadCharacter()
+			character = player.Character or player.CharacterAdded:Wait()
+		end
+	end
+	if not character or not character.Parent then
 		return nil
 	end
+	combatant.character = character
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
@@ -70,11 +95,15 @@ function CharacterService.spawnAt(self: Service, player: Player, spawnSpec: any)
 	end
 
 	if humanoid.Health <= 0 then
+		if not player then
+			return nil
+		end
 		player:LoadCharacter()
 		character = player.Character or player.CharacterAdded:Wait()
 		if not character then
 			return nil
 		end
+		combatant.character = character
 		humanoid = character:FindFirstChildOfClass("Humanoid")
 		root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
 		if not humanoid or not root then
@@ -82,11 +111,22 @@ function CharacterService.spawnAt(self: Service, player: Player, spawnSpec: any)
 		end
 	end
 
-	applyOutfit(character, player.UserId)
+	applyOutfit(character, if player then player.UserId else combatant.id * 7)
 
-	local position = Vector3.new(spawnSpec.pos[1], spawnSpec.pos[2] + 3, spawnSpec.pos[3])
-	root.CFrame = CFrame.new(position) * CFrame.Angles(0, math.rad(spawnSpec.yaw or 0), 0)
+	local target = CFrame.new(Vector3.new(spawnSpec.pos[1], spawnSpec.pos[2] + ROOT_OFFSET, spawnSpec.pos[3]))
+		* CFrame.Angles(0, math.rad(spawnSpec.yaw or 0), 0)
+
+	character:PivotTo(target)
 	root.AssemblyLinearVelocity = Vector3.zero
+	root.AssemblyAngularVelocity = Vector3.zero
+
+	local settled = root
+	task.defer(function()
+		if character.Parent and settled.Parent and (settled.Position - target.Position).Magnitude > 1 then
+			character:PivotTo(target)
+			settled.AssemblyLinearVelocity = Vector3.zero
+		end
+	end)
 
 	humanoid.WalkSpeed = self.config.movement.walkSpeed
 	humanoid.JumpPower = self.config.movement.jumpPower
@@ -96,16 +136,23 @@ function CharacterService.spawnAt(self: Service, player: Player, spawnSpec: any)
 	return character
 end
 
-function CharacterService.setSpeed(_self: Service, player: Player, speed: number)
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+function CharacterService.humanoidOf(self: Service, combatant: Types.Combatant): Humanoid?
+	local character = CharacterService.characterOf(self, combatant)
+	if not character then
+		return nil
+	end
+	return character:FindFirstChildOfClass("Humanoid")
+end
+
+function CharacterService.setSpeed(self: Service, combatant: Types.Combatant, speed: number)
+	local humanoid = CharacterService.humanoidOf(self, combatant)
 	if humanoid then
 		humanoid.WalkSpeed = speed
 	end
 end
 
-function CharacterService.setTransparency(_self: Service, player: Player, transparency: number)
-	local character = player.Character
+function CharacterService.setTransparency(self: Service, combatant: Types.Combatant, transparency: number)
+	local character = CharacterService.characterOf(self, combatant)
 	if not character then
 		return
 	end
@@ -119,21 +166,12 @@ function CharacterService.setTransparency(_self: Service, player: Player, transp
 	end
 end
 
-function CharacterService.freeze(_self: Service, player: Player, frozen: boolean)
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if humanoid then
-		humanoid.WalkSpeed = if frozen then 0 else humanoid.WalkSpeed
-		humanoid.AutoRotate = not frozen
-	end
-end
-
 --[[
-	Kills a character and leaves a body behind. The corpse is what turns a
-	murder into information for everyone still alive.
+	Kills a body and leaves it behind. The corpse is what turns a murder into
+	information for everyone still alive.
 ]]
-function CharacterService.eliminate(_self: Service, player: Player, cause: string)
-	local character = player.Character
+function CharacterService.eliminate(self: Service, combatant: Types.Combatant, cause: string)
+	local character = CharacterService.characterOf(self, combatant)
 	if not character then
 		return
 	end
@@ -149,7 +187,7 @@ function CharacterService.eliminate(_self: Service, player: Player, cause: strin
 	-- Detach the corpse so respawn logic cannot sweep the evidence away.
 	task.defer(function()
 		if character.Parent then
-			character.Name = `Corpse_{player.Name}`
+			character.Name = `Corpse_{combatant.name}`
 			for _, part in character:GetDescendants() do
 				if part:IsA("BasePart") then
 					part.CanCollide = false
@@ -162,6 +200,10 @@ function CharacterService.eliminate(_self: Service, player: Player, cause: strin
 			end)
 		end
 	end)
+
+	if combatant.isBot then
+		combatant.character = nil
+	end
 end
 
 function CharacterService.clearCorpses(_self: Service)
@@ -172,27 +214,17 @@ function CharacterService.clearCorpses(_self: Service)
 	end
 end
 
-function CharacterService.rootOf(_self: Service, player: Player): BasePart?
-	local character = player.Character
+function CharacterService.rootOf(self: Service, combatant: Types.Combatant): BasePart?
+	local character = CharacterService.characterOf(self, combatant)
 	if not character then
 		return nil
 	end
 	return character:FindFirstChild("HumanoidRootPart") :: BasePart?
 end
 
-function CharacterService.isAlive(_self: Service, player: Player): boolean
-	local character = player.Character
-	if not character then
-		return false
-	end
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
+function CharacterService.isAlive(self: Service, combatant: Types.Combatant): boolean
+	local humanoid = CharacterService.humanoidOf(self, combatant)
 	return humanoid ~= nil and humanoid.Health > 0
-end
-
-function CharacterService.eachPlayer(_self: Service, callback: (Player) -> ())
-	for _, player in Players:GetPlayers() do
-		callback(player)
-	end
 end
 
 return CharacterService

@@ -2,9 +2,9 @@
 
 **A murder mystery game for Roblox.** *The rides never stopped. Neither did the killer.*
 
-An abandoned seaside carnival still has power. The wheel still turns, the calliope still plays,
-and somewhere between the stalls one of you is holding a knife. Twelve people walk in, the
-generator coughs, and the lights go out on a timer.
+An abandoned seaside carnival still has power. The wheel still turns, the neon still burns, and
+somewhere between the stalls one of you is holding a knife. Then the generator coughs and the
+lights go out, on a timer, again and again until somebody wins.
 
 ![The park from above](docs/media/aerial.png)
 
@@ -26,8 +26,8 @@ renderers consume it: `src/server/MapBuilder.luau` turns it into Roblox `Part` i
 `web/src/renderer/mapMesh.js` turns it into three.js meshes. Same geometry, same lights, same
 colours, same `GameConfig.json`. What you see in the browser is what the place file contains.
 
-It also turned out to be the best testing tool in the project: it plays hundreds of rounds a
-second with no client attached, which is how the balance numbers below were set.
+It also turned out to be the best testing tool in the project: with no renderer attached it plays
+around forty complete rounds a second, which is how the balance numbers below were set.
 
 ---
 
@@ -74,10 +74,10 @@ Intermission (20s)  ->  Grace (6s)  ->  Round (up to 180s)  ->  Post-round (9s) 
       lobby            roles dealt        knives out            payouts
 ```
 
-**Roles** are dealt at the start of Grace. One murderer per nine players (up to three), one
-sheriff per eleven (up to two), everyone else innocent. Anyone who drew a special role in the
-last two rounds goes to the back of the queue, so the same person does not get the knife three
-times running.
+**Roles** are dealt at the start of Grace. There is always one murderer, a second from 11 players
+and a third from 20; a sheriff appears at 3 players and a second at 14. Everyone else is innocent.
+Anyone who drew a special role in the last two rounds sinks down the pool, so the knife moves
+around the lobby instead of landing on the same unlucky player three rounds running.
 
 | Role | Has | Wants |
 |---|---|---|
@@ -96,8 +96,8 @@ first is not automatically a win for the murderer.
 **Blackouts** are the theme doing mechanical work. The generator yard cuts the park lights 42
 seconds into a round and every 52 seconds after that, for nine seconds each time, with a
 three-and-a-half second warning as the generator coughs. In the dark the fog closes to 115 studs,
-the murderer gets a small speed bonus, and a handful of emergency lights are the only thing you
-can navigate by. Everyone's plan changes.
+the murderer gets a small speed bonus, and all you have to navigate by is a handful of emergency
+lights and the lantern you are carrying. Everyone's plan changes.
 
 **Movement** is stamina-limited: sprinting drains, standing still recovers after a beat, and the
 murderer is always slightly faster than you.
@@ -124,9 +124,29 @@ npm install
 npm run place     # generates the map, then builds build/HollowCarnival.rbxlx
 ```
 
-Open `build/HollowCarnival.rbxlx` in Studio and press Play. For a real test use **Test > Players >
-2 players or more** — with one player the round loop parks in Intermission, because a murder
-mystery needs somebody to murder.
+Open `build/HollowCarnival.rbxlx` in Studio and press Play. **One player is enough** — see below.
+
+### Testing it alone
+
+A murder mystery needs a crowd, so the server brings its own. On every intermission the lobby is
+topped up with bots to `bots.fillTo` (eight by default, counting the humans present), and a bot
+gives its slot back the moment a real player takes it.
+
+Bots are not a separate code path. They draw roles from the same `RoundLogic.assignRoles` call as
+players, carry the same knife and revolver, die to the same rules, drop the same gun for a Hero to
+find, and count towards the same win conditions. Everything downstream of role assignment is
+written against `Types.Combatant`, which is either a player or a bot; the only thing the server
+branches on is that you cannot fire a remote at a bot.
+
+They navigate the same graph `MapData.json` gives the previsualizer, so if you want to know roughly
+how a round will go before you load Studio, `node tools/sim-report.mjs --timeline` will tell you.
+
+Two honest limitations: bots have no `Animate` script, so they glide rather than walk (animations
+need uploaded assets), and their tactics are deliberately plain — hunt, defend, or wander. They
+are there to make the rules exercisable on your own, not to be good opponents.
+
+Turn them off with `"bots": { "enabled": false }` in `config/GameConfig.json`, or use
+**Test > Players > 2 players** for a human game.
 
 To iterate with Studio live-syncing your edits:
 
@@ -155,9 +175,9 @@ It loads the map, bakes the lighting, drops in twelve bots and plays rounds fore
 ## Testing
 
 ```bash
-npm test          # everything: 82 Luau tests, 14 JavaScript tests
+npm test          # everything: 84 Luau tests, 18 JavaScript tests
 npm run test:luau # Lune: rules, map validation, source compilation
-npm run test:js   # Node: Luau/JS parity, headless round simulation
+npm run test:js   # Node: Luau/JS parity, spawn geometry, headless round simulation
 ```
 
 There is no Roblox runtime on Linux, so the Luau tests run under
@@ -177,6 +197,9 @@ What the suites actually check:
   reachable from the entrance** (a connectivity check that has caught a walled-off bumper car
   arena and a pier that did not join the shore).
 - **`tests/sources.test.luau`** — every server and client file compiles and is `--!strict`.
+- **`tests/spawns.test.mjs`** — reconstructs the collision volumes from `MapData.json` and asks,
+  of every spawn point, whether a body actually fits there and whether anything is underneath it.
+  This is the test that would have caught the bug described below, and did not exist until it bit.
 - **`tests/rules-parity.test.mjs`** — the rules exist twice, in Luau for the game and JavaScript
   for the previsualizer. This dumps both to JSON and diffs them, so the simulation cannot quietly
   drift away from the thing it is meant to be simulating.
@@ -206,6 +229,34 @@ off and flee when someone armed is looking at them produced the spread above.
 `--timeline` replays the exact round the previsualizer shows and prints when each beat lands,
 which is how the demo capture knows where to start.
 
+### The bug the map tests could not see
+
+For a while, joining the game killed you instantly, every time.
+
+The lobby has an invisible barrier so nobody walks off a platform floating in the void. It was
+authored as a single cylinder the width of the platform — which is a *solid volume*, not a wall,
+and all twelve spawn pads were inside it. Roblox ejects a character embedded in an anchored part,
+which threw players off the edge, and with no ground under the lobby they fell until
+`FallenPartsDestroyHeight` deleted them.
+
+Nothing caught it. The barrier is invisible, so it looked right in the previsualizer. The map
+tests checked bounds, connectivity, light budgets and spawn spacing, and passed. The bots ran
+thousands of rounds in the headless simulation without noticing, because that simulation moves
+points around a graph and has no notion of a solid.
+
+The barrier is now a ring of chord panels, and `tools/check-spawns.mjs` reconstructs the collision
+geometry to check that every spawn has a clear body volume and ground beneath it. It found two
+more while it was there: one round spawn inside the Big Top bleachers, and one inside the swing of
+a Ferris wheel gondola. The generator now rejects spawn candidates that fail the same check.
+
+```
+$ node tools/check-spawns.mjs
+38 spawns checked (12 lobby, 26 round)
+drop to ground: min 1.50  median 3.50  max 3.75
+
+  every spawn is clear and has ground beneath it
+```
+
 ---
 
 ## Layout
@@ -215,11 +266,14 @@ config/GameConfig.json     every tunable number, read by all four consumers
 default.project.json       Rojo: files -> Roblox instances
 
 src/shared/                RoundLogic (pure rules), Net (remotes), Types
-src/server/                GameService (the loop), MapBuilder, Weapon/Coin/Blackout/Character
+src/server/                GameService (the loop), MapBuilder, BotService,
+                           Weapon/Coin/Blackout/Character
 src/client/                Hud, RoleReveal, Atmosphere, Input
 
 tools/map/                 the map generator, one module per district
+tools/map/collision.mjs    solid-body maths: can a character stand here
 tools/generate-map.mjs     runs it: geometry, nav graph, spawns, coin spots -> MapData.json
+tools/check-spawns.mjs     audits every spawn for clearance and ground
 tools/capture-*.mjs        headless Chrome stills and frame-by-frame video
 tools/sim-report.mjs       balance sampling and round timelines
 
@@ -241,7 +295,9 @@ by brightness and range and allows only a small number of shadow casters — the
 `Neon` material carrying the look, which is free.
 
 That difference is the main reason the browser is a *previsualizer* and not a preview: the
-geometry and colours are exact, the lighting is a good-faith approximation.
+geometry and colours are exact, the lighting is a good-faith approximation. The previsualizer also
+draws a coloured halo over every character so you can read the round at a glance, which is a
+spectator affordance the game itself does not give you.
 
 ## Known gaps
 
@@ -249,4 +305,6 @@ geometry and colours are exact, the lighting is a good-faith approximation.
   `generator_hum`) but no sounds are wired up; they need Roblox asset IDs, which need an upload.
 - **Nothing has been played by humans.** Every claim about balance here comes from bots. The
   numbers are a starting point for a real playtest, not the end of one.
+- **Bots glide.** They have no animation controller, so they slide along the ground. Fixing it
+  needs animation assets uploaded to a Roblox account.
 - **Coins have no shop.** They accumulate and pay out, and then there is nothing to spend them on.

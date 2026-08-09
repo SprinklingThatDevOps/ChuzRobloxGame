@@ -228,6 +228,7 @@ function syncActors(sim, actors, dt) {
 			actor.toolKind = null;
 		}
 
+		actor.setBlackout(sim.blackoutAmount);
 		if (bot.alive && !actor.alive) actor.revive();
 		if (!bot.alive && actor.alive) {
 			actor.setPosition(bot.pos[0], bot.pos[1], bot.pos[2]);

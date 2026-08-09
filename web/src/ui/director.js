@@ -2,6 +2,8 @@ import * as THREE from "three";
 import { Role } from "../sim/rules.js";
 import { distanceXZ } from "../sim/nav.js";
 
+const KILL_ORBIT_RADIUS = 19;
+
 const SHOTS = {
 	ESTABLISHING: "ESTABLISHING",
 	CHASE: "CHASE",
@@ -96,8 +98,35 @@ export class Director {
 		this.shotTime = 0;
 		this.shotDuration = 4.2;
 		this.killAnchor = new THREE.Vector3(position[0], position[1], position[2]);
-		this.orbitAngle = Math.random() * Math.PI * 2;
+		this.orbitAngle = this.openAngleAround(position, KILL_ORBIT_RADIUS);
 		this.punch(1.6);
+	}
+
+	/**
+	 * Kills happen wherever the chase ended, which is often against a stall
+	 * wall or inside the big top. Orbiting from a random bearing puts the
+	 * camera inside the scenery about as often as not, so bearings are scored
+	 * against the walkable graph and the most open one wins: if the camera can
+	 * stand there, it can see out.
+	 */
+	openAngleAround(position, radius) {
+		const nav = this.sim.nav;
+		if (!nav) return Math.random() * Math.PI * 2;
+
+		let bestAngle = Math.random() * Math.PI * 2;
+		let bestScore = Infinity;
+		const offset = Math.random() * Math.PI * 2;
+		for (let i = 0; i < 8; i++) {
+			const angle = offset + (i / 8) * Math.PI * 2;
+			const x = position[0] + Math.cos(angle) * radius;
+			const z = position[2] + Math.sin(angle) * radius;
+			const score = nav.distanceToGraph(x, z);
+			if (score < bestScore) {
+				bestScore = score;
+				bestAngle = angle;
+			}
+		}
+		return bestAngle;
 	}
 
 	update(dt) {
@@ -181,9 +210,9 @@ export class Director {
 				this.orbitAngle += dt * 0.4;
 				const anchor = this.killAnchor;
 				this.desiredPosition.set(
-					anchor.x + Math.cos(this.orbitAngle) * 17,
-					anchor.y + 9,
-					anchor.z + Math.sin(this.orbitAngle) * 17,
+					anchor.x + Math.cos(this.orbitAngle) * KILL_ORBIT_RADIUS,
+					anchor.y + 12,
+					anchor.z + Math.sin(this.orbitAngle) * KILL_ORBIT_RADIUS,
 				);
 				this.desiredTarget.copy(anchor).add(new THREE.Vector3(0, 3, 0));
 				break;

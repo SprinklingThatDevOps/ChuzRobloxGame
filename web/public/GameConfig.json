@@ -101,6 +101,8 @@
 		}
 	},
 	"bots": {
+		"enabled": true,
+		"fillTo": 8,
 		"visionRange": 95,
 		"blackoutVisionRange": 32,
 		"recogniseRange": 18,
