@@ -12,6 +12,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { MapBuilder, distanceXZ } from "./map/builder.mjs";
+import { collidableParts, isClear } from "./map/collision.mjs";
 import { makeRng } from "./map/prng.mjs";
 import { LAYOUT } from "./map/layout.mjs";
 import { buildGround } from "./map/districts/ground.mjs";
@@ -25,6 +26,8 @@ import { buildLobby } from "./map/districts/lobby.mjs";
 const SEED = 0x484f4c4c; // "HOLL"
 const NAV_STEP = 14;
 const PLAY_HALF = 196;
+// How far a round spawn stands above its nav node.
+const SPAWN_RISE = 1.5;
 // Half-extent of the dead ground slab laid down by buildGround.
 const WASTELAND_HALF = 380;
 
@@ -320,11 +323,23 @@ function nearestIndex(points, target) {
  * knife range of half the lobby.
  */
 function placeRoundSpawns(b, count = 26) {
-	const candidates = b.nav.nodes.filter((n) => n.name !== "maze" && Math.abs(n.pos[0]) < 185 && Math.abs(n.pos[2]) < 185);
+	const solids = collidableParts(b.parts);
+	// The soles end up here: CharacterService lifts the root three studs above
+	// the spawn point and the root itself rides three studs above the feet.
+	const feetAt = (navPos) => [navPos[0], navPos[1] + SPAWN_RISE, navPos[2]];
+
+	const candidates = b.nav.nodes.filter((n) => {
+		if (n.name === "maze" || Math.abs(n.pos[0]) >= 185 || Math.abs(n.pos[2]) >= 185) return false;
+		// A walkable node is not automatically a standable one. Bleacher rows
+		// and the low swing of the wheel's gondolas both sit over open floor,
+		// and a character placed inside either is thrown by the physics solver.
+		return isClear(feetAt(n.pos), solids);
+	});
+
 	const chosen = farthestPointSample(candidates.map((n) => n.pos), count, [0, 2.2, 120]);
 	for (const pos of chosen) {
 		const yaw = (Math.atan2(0 - pos[0], 0 - pos[2]) * 180) / Math.PI;
-		b.roundSpawn([pos[0], pos[1] + 1.5, pos[2]], yaw);
+		b.roundSpawn(feetAt(pos), yaw);
 	}
 }
 

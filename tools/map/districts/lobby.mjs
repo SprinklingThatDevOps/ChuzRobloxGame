@@ -123,18 +123,32 @@ export function buildLobby(b, rng) {
 			});
 		});
 		b.neonHoop([lx, ly + 4.2, lz], R - 2, 0.5, NEON.violet, 56);
-		b.part({
-			name: "LobbyBarrier",
-			shape: "cyl",
-			pos: [lx, ly + 14, lz],
-			size: [28, R * 2 - 2, R * 2 - 2],
-			rot: [0, 0, 90],
-			color: [255, 255, 255],
-			material: MATERIAL.smooth,
-			transparency: 1,
-			castShadow: false,
-			tags: ["Barrier"],
-		});
+
+		// An invisible wall around the rim, so a player who runs at the edge
+		// bounces instead of falling into the void. It has to be a *wall* of
+		// chord panels: a single cylinder of this radius is a solid volume, and
+		// every spawn pad would start inside it.
+		const barrierHeight = 28;
+		const barrierRadius = R - 2;
+		const barrierSegments = 40;
+		for (let i = 0; i < barrierSegments; i++) {
+			const a0 = ((Math.PI * 2) / barrierSegments) * i;
+			const a1 = ((Math.PI * 2) / barrierSegments) * (i + 1);
+			b.beam(
+				[lx + Math.cos(a0) * barrierRadius, ly + barrierHeight / 2, lz + Math.sin(a0) * barrierRadius],
+				[lx + Math.cos(a1) * barrierRadius, ly + barrierHeight / 2, lz + Math.sin(a1) * barrierRadius],
+				1.5,
+				barrierHeight,
+				{
+					name: "LobbyBarrier",
+					color: [255, 255, 255],
+					material: MATERIAL.smooth,
+					transparency: 1,
+					castShadow: false,
+					tags: ["Barrier"],
+				},
+			);
+		}
 
 		// Benches facing the middle.
 		b.ring([lx, 0, lz], R - 30, 6, (pos, deg) => {
