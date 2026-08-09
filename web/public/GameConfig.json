@@ -100,6 +100,15 @@
 			"description": "Freeze in place to ping nearby footsteps."
 		}
 	},
+	"bots": {
+		"visionRange": 95,
+		"blackoutVisionRange": 32,
+		"recogniseRange": 18,
+		"exposureSeconds": 6,
+		"witnessRange": 75,
+		"fireRange": 45,
+		"decisionInterval": 0.3
+	},
 	"coins": {
 		"activeCount": 42,
 		"respawnSeconds": 26,

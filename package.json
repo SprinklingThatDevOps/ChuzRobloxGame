@@ -4,7 +4,15 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "map": "node tools/generate-map.mjs",
+    "place": "npm run map && rojo build default.project.json --output build/HollowCarnival.rbxlx",
+    "serve": "rojo serve default.project.json",
+    "dev": "npm --prefix web install --silent && npm --prefix web run dev",
+    "shots": "node tools/capture-shots.mjs",
+    "demo": "node tools/capture-demo.mjs",
+    "test": "npm run test:luau && npm run test:js",
+    "test:luau": "lune run tests/run",
+    "test:js": "node --test tests/*.test.mjs"
   },
   "repository": {
     "type": "git",

@@ -1,6 +1,12 @@
 import { MATERIAL, NEON, NEON_ORDER, PAINT, shade } from "../palette.mjs";
 import { LAYOUT } from "../layout.mjs";
 
+/**
+ * Width of the walk-in gap in the dodgem guard rail. generate-map.mjs punches
+ * the matching hole in the navigation blocker, so the two must agree.
+ */
+export const ENTRANCE_GAP = 24;
+
 /** Dodgems pavilion: open sightlines up top, a forest of cover down low. */
 export function buildBumperCars(b, rng) {
 	const { bumperCars } = LAYOUT;
@@ -19,10 +25,15 @@ export function buildBumperCars(b, rng) {
 			reflectance: 0.25,
 		});
 
-		// Guard rail with a padded neon lip.
+		// Guard rail with a padded neon lip. The front run is split to leave a
+		// walk-in gap under the sign — the arena floor is the best cover in
+		// this half of the park and it would be wasted behind a solid rail.
+		const gapHalf = ENTRANCE_GAP / 2;
+		const wingWidth = halfW - gapHalf;
 		const railSpecs = [
 			{ pos: [cx, 2, cz - halfD], size: [bumperCars.width, 4, 2] },
-			{ pos: [cx, 2, cz + halfD], size: [bumperCars.width, 4, 2] },
+			{ pos: [cx - gapHalf - wingWidth / 2, 2, cz + halfD], size: [wingWidth, 4, 2] },
+			{ pos: [cx + gapHalf + wingWidth / 2, 2, cz + halfD], size: [wingWidth, 4, 2] },
 			{ pos: [cx - halfW, 2, cz], size: [2, 4, bumperCars.depth] },
 			{ pos: [cx + halfW, 2, cz], size: [2, 4, bumperCars.depth] },
 		];
@@ -378,10 +389,13 @@ export function buildPier(b, rng) {
 			});
 		}
 
-		// Pier deck on pilings, running out across the water.
+		// Pier deck on pilings. It spans the whole basin and lands on solid
+		// ground at both ends: a pier you can only reach from one side is a
+		// death trap, not a shortcut.
 		const deckZ = pz;
-		for (let i = 0; i < 14; i++) {
-			const x = px - halfW + 8 + i * 6;
+		const deckPlanks = Math.ceil((pier.poolWidth + 16) / 6);
+		for (let i = 0; i < deckPlanks; i++) {
+			const x = px - halfW - 8 + i * 6;
 			b.box({
 				name: "PierPlank",
 				pos: [x, 2, deckZ],
@@ -406,7 +420,7 @@ export function buildPier(b, rng) {
 			}
 		}
 		for (const zs of [-1, 1]) {
-			b.tube([px - halfW + 8, 5.6, deckZ + zs * 8], [px + halfW - 8, 5.6, deckZ + zs * 8], 0.5, {
+			b.tube([px - halfW - 6, 5.6, deckZ + zs * 8], [px + halfW + 6, 5.6, deckZ + zs * 8], 0.5, {
 				name: "PierRail",
 				color: PAINT.rust,
 				material: MATERIAL.wood,
@@ -414,8 +428,8 @@ export function buildPier(b, rng) {
 			});
 		}
 		// Lamps down the pier.
-		for (let i = 0; i < 5; i++) {
-			const x = px - halfW + 16 + i * 18;
+		for (let i = 0; i < 6; i++) {
+			const x = px - halfW + 4 + i * 22;
 			b.tube([x, 2, deckZ + 8], [x, 14, deckZ + 8], 0.7, {
 				name: "PierLampPost",
 				color: PAINT.iron,

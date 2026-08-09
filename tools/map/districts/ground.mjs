@@ -6,6 +6,17 @@ export function buildGround(b, rng) {
 	const { ground, wall, avenue, crossAvenue, plaza } = LAYOUT;
 
 	b.inGroup("Ground", () => {
+		// Dead ground beyond the hoarding. Nobody walks on it, but the dead
+		// trees have to be standing on something or they read as floating
+		// props the moment the fog thins.
+		b.box({
+			name: "Wasteland",
+			pos: [0, -ground.thickness / 2 - 0.5, 0],
+			size: [760, ground.thickness, 760],
+			color: shade(PAINT.plumDark, -0.45),
+			material: MATERIAL.slate,
+		});
+
 		b.box({
 			name: "Midway",
 			pos: [0, -ground.thickness / 2, 0],

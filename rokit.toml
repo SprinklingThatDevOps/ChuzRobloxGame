@@ -1,0 +1,5 @@
+# Pinned so the place file and the test results are reproducible.
+# Install Rokit (https://github.com/rojo-rbx/rokit), then run `rokit install`.
+[tools]
+rojo = "rojo-rbx/rojo@7.7.0"
+lune = "lune-org/lune@0.10.5"

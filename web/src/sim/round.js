@@ -6,18 +6,22 @@ const BOT_NAMES = [
 	"Sable", "Tuck", "Nadia", "Grimes", "Wren", "Otto", "Delphine", "Kip",
 ];
 
-const VISION = { base: 95, blackout: 32 };
-const DECISION_INTERVAL = 0.3;
-
 /**
  * Headless simulation of a full Hollow Carnival round.
  *
  * It contains no rendering code at all, so the same file runs under Node in
  * tests/sim-smoke.test.mjs to prove rounds always terminate with a winner.
+ *
+ * The bots model the one thing a murder mystery lives or dies on: nobody knows
+ * who the murderer is. A bot only identifies the killer up close, or after
+ * watching them kill someone. Give the armed bots perfect knowledge instead and
+ * the sheriff wins essentially every round from across the park -- which is
+ * both a boring demo and a lie about how the game plays.
  */
 export class RoundSim {
 	constructor({ config, mapData, nav, random, botCount = 12, onEvent = () => {} }) {
 		this.config = config;
+		this.awareness = config.bots;
 		this.mapData = mapData;
 		this.nav = nav;
 		this.random = random;
@@ -36,6 +40,7 @@ export class RoundSim {
 				heading: 0,
 				speed: 0,
 				path: [],
+				goal: undefined,
 				pathIndex: 0,
 				coins: 0,
 				roleCooldown: 0,
@@ -43,7 +48,8 @@ export class RoundSim {
 				shootCooldown: 0,
 				ammo: 0,
 				hasGun: false,
-				decisionTimer: this.random() * DECISION_INTERVAL,
+				exposedUntil: 0,
+				decisionTimer: this.random() * config.bots.decisionInterval,
 				intent: "idle",
 				targetId: null,
 			});
@@ -71,6 +77,8 @@ export class RoundSim {
 			bot.hasGun = false;
 			bot.ammo = 0;
 			bot.path = [];
+			bot.goal = undefined;
+			bot.exposedUntil = 0;
 			bot.intent = "waiting";
 		}
 		this.spawnAll(this.mapData.spawns.lobby);
@@ -111,6 +119,7 @@ export class RoundSim {
 			bot.pos = [spawn.pos[0], spawn.pos[1], spawn.pos[2]];
 			bot.heading = (spawn.yaw * Math.PI) / 180;
 			bot.path = [];
+			bot.goal = undefined;
 			bot.speed = 0;
 		});
 	}
@@ -135,6 +144,8 @@ export class RoundSim {
 			bot.ammo = role === Role.Sheriff ? this.config.weapons.revolver.magazine : 0;
 			bot.roleCooldown = role === Role.Innocent ? Math.max(0, bot.roleCooldown - 1) : this.config.assignment.recentRoleCooldownRounds;
 			bot.path = [];
+			bot.goal = undefined;
+			bot.exposedUntil = 0;
 			bot.intent = "roaming";
 		}
 		this.spawnAll(this.mapData.spawns.round);
@@ -240,13 +251,26 @@ export class RoundSim {
 	}
 
 	visionRange() {
-		return this.blackoutActive ? VISION.blackout : VISION.base;
+		return this.blackoutActive ? this.awareness.blackoutVisionRange : this.awareness.visionRange;
 	}
 
 	canSee(from, to) {
 		const range = this.visionRange();
 		if (distanceXZ(from.pos, to.pos) > range) return false;
 		return this.nav.hasLineOfSight(from.pos, to.pos, range);
+	}
+
+	/**
+	 * Whether `bot` currently knows a particular murderer for what they are.
+	 * Seeing someone is not the same as recognising the knife: that takes
+	 * getting close, or watching them use it.
+	 */
+	identifyThreat(bot) {
+		const murderer = this.nearestVisible(bot, (other) => other.role === Role.Murderer);
+		if (!murderer) return null;
+		if (this.phaseTime < murderer.exposedUntil) return murderer;
+		if (distanceXZ(bot.pos, murderer.pos) <= this.awareness.recogniseRange) return murderer;
+		return null;
 	}
 
 	updateBots(dt) {
@@ -258,11 +282,12 @@ export class RoundSim {
 			bot.shootCooldown = Math.max(0, bot.shootCooldown - dt);
 			bot.decisionTimer -= dt;
 			if (bot.decisionTimer <= 0) {
-				bot.decisionTimer = DECISION_INTERVAL;
+				bot.decisionTimer = this.awareness.decisionInterval;
 				this.decide(bot);
 			}
 
-			const sprinting = bot.intent === "flee" || bot.intent === "hunt" || bot.intent === "chase";
+			const sprinting =
+				bot.intent === "flee" || bot.intent === "hunt" || bot.intent === "chase" || bot.intent === "evade";
 			let speed = sprinting ? movement.sprintSpeed : movement.walkSpeed;
 			if (bot.role === Role.Murderer) {
 				speed += movement.murdererSpeedBonus;
@@ -271,7 +296,10 @@ export class RoundSim {
 			this.advance(bot, dt, speed);
 		}
 
-		this.resolveInteractions();
+		// Nobody can be hurt during the grace period, same as the live server.
+		if (this.phase === Phase.Round) {
+			this.resolveInteractions();
+		}
 	}
 
 	decide(bot) {
@@ -282,6 +310,22 @@ export class RoundSim {
 		}
 
 		if (bot.role === Role.Murderer) {
+			// Guns are visible in someone's hand, so the murderer knows who is
+			// armed even though nobody knows who the murderer is. Walking into
+			// a revolver is how a murderer loses; backing off and finding
+			// someone alone is how they win.
+			const hunter = this.nearestVisible(bot, (other) => other.hasGun);
+			if (hunter) {
+				const gap = distanceXZ(bot.pos, hunter.pos);
+				const canStrike = gap <= this.config.weapons.knife.slashRange * 2;
+				const outgunned = gap <= this.awareness.fireRange;
+				if (!canStrike && (outgunned || this.phaseTime < bot.exposedUntil)) {
+					bot.intent = "evade";
+					this.pathTo(bot, this.fleeTarget(bot, hunter));
+					return;
+				}
+			}
+
 			const prey = this.nearestVisible(bot, (other) => other.role !== Role.Murderer);
 			if (prey) {
 				bot.intent = "chase";
@@ -297,7 +341,7 @@ export class RoundSim {
 			return;
 		}
 
-		const murderer = this.nearestVisible(bot, (other) => other.role === Role.Murderer);
+		const murderer = this.identifyThreat(bot);
 		const armed = bot.role === Role.Sheriff || bot.role === Role.Hero;
 
 		if (murderer && armed) {
@@ -305,8 +349,12 @@ export class RoundSim {
 			bot.targetId = murderer.id;
 			const gap = distanceXZ(bot.pos, murderer.pos);
 			// Hold at a distance the knife can't close before the next shot.
-			if (gap > 26) this.pathTo(bot, murderer.pos, true);
-			else bot.path = [];
+			if (gap > 26) {
+				this.pathTo(bot, murderer.pos, true);
+			} else {
+				bot.path = [];
+				bot.goal = undefined;
+			}
 			return;
 		}
 		if (murderer) {
@@ -319,6 +367,14 @@ export class RoundSim {
 		if (armed) {
 			bot.intent = "patrol";
 			if (bot.path.length === 0) this.pathTo(bot, this.nav.randomNode(this.random));
+			return;
+		}
+
+		// A revolver lying on the ground is worth more than any coin.
+		const gun = this.nearestDroppedGun(bot);
+		if (gun) {
+			bot.intent = "arm";
+			this.pathTo(bot, gun.pos);
 			return;
 		}
 
@@ -376,6 +432,22 @@ export class RoundSim {
 		return target;
 	}
 
+	nearestDroppedGun(bot) {
+		// A dropped revolver glows on the ground, so bots go for it from
+		// anywhere in the park rather than having to stumble across it.
+		let best = null;
+		let bestDist = Infinity;
+		for (const gun of this.droppedGuns) {
+			if (gun.taken) continue;
+			const d = distanceXZ(bot.pos, gun.pos);
+			if (d < bestDist) {
+				bestDist = d;
+				best = gun;
+			}
+		}
+		return best;
+	}
+
 	nearestCoin(bot) {
 		let best = null;
 		let bestDist = Infinity;
@@ -390,7 +462,19 @@ export class RoundSim {
 		return best;
 	}
 
+	/**
+	 * Bots re-decide several times a second, but re-planning every time is
+	 * what makes them shuffle on the spot: a fresh path always starts at the
+	 * nearest graph node, which is usually the one directly behind them. So
+	 * an existing plan is kept until the destination actually moves.
+	 */
 	pathTo(bot, target, direct = false) {
+		const stillHeadingThere =
+			bot.goal !== undefined && bot.pathIndex < bot.path.length && distanceXZ(bot.goal, target) < 6;
+		if (stillHeadingThere) return;
+
+		bot.goal = [target[0], target[1], target[2]];
+
 		if (direct && this.nav.hasLineOfSight(bot.pos, target)) {
 			bot.path = [target];
 			bot.pathIndex = 0;
@@ -398,6 +482,15 @@ export class RoundSim {
 		}
 		const path = this.nav.findPath(bot.pos, target);
 		bot.path = path.length > 0 ? path : [target];
+		// findPath lands on the nearest graph node, which can be several studs
+		// off the thing the bot was actually walking to — close enough to look
+		// right, not close enough to pick up a coin or a dropped revolver. Only
+		// worth doing for targets that sit on walkable ground; a flee heading
+		// can point straight into a tent, and following it literally would
+		// march the bot through the canvas.
+		const last = bot.path[bot.path.length - 1];
+		const reachable = this.nav.distanceToGraph(target[0], target[2]) <= 8;
+		if (reachable && distanceXZ(last, target) > 1) bot.path.push(target);
 		bot.pathIndex = 0;
 	}
 
@@ -412,7 +505,10 @@ export class RoundSim {
 		const length = Math.hypot(dx, dz);
 		if (length < 2.2) {
 			bot.pathIndex++;
-			if (bot.pathIndex >= bot.path.length) bot.path = [];
+			if (bot.pathIndex >= bot.path.length) {
+				bot.path = [];
+				bot.goal = undefined;
+			}
 			return;
 		}
 		const step = Math.min(speed * dt, length);
@@ -439,16 +535,19 @@ export class RoundSim {
 			}
 		}
 
-		// Armed players return fire.
+		// Armed players return fire — but only at someone they have actually
+		// identified, and only once they are close enough to be sure.
 		for (const bot of this.bots) {
 			if (!bot.alive || !bot.hasGun || bot.shootCooldown > 0 || bot.ammo <= 0) continue;
-			const target = this.nearestVisible(bot, (other) => other.role === Role.Murderer);
+			const target = this.identifyThreat(bot);
 			if (!target) continue;
+			const gap = distanceXZ(bot.pos, target.pos);
+			if (gap > this.awareness.fireRange) continue;
+
 			bot.shootCooldown = revolver.fireCooldown;
 			bot.ammo--;
-			const gap = distanceXZ(bot.pos, target.pos);
 			// Accuracy falls off with range and collapses in the dark.
-			const accuracy = clamp(1 - gap / revolver.range, 0.15, 0.95) * (this.blackoutActive ? 0.45 : 1);
+			const accuracy = clamp(1 - gap / this.awareness.fireRange, 0.15, 0.95) * (this.blackoutActive ? 0.45 : 1);
 			const hit = this.random() < accuracy;
 			this.emit("shot", { by: bot.name, hit, message: hit ? `${bot.name} fires — hit` : `${bot.name} fires — miss` });
 			if (hit) {
@@ -489,11 +588,29 @@ export class RoundSim {
 		}
 	}
 
+	/** Is anyone still alive close enough, and with a clear enough view, to see this? */
+	witnessed(where, actor) {
+		for (const bot of this.bots) {
+			if (bot === actor || !bot.alive || bot.role === Role.Murderer) continue;
+			if (distanceXZ(bot.pos, where) > Math.min(this.awareness.witnessRange, this.visionRange())) continue;
+			if (this.nav.hasLineOfSight(bot.pos, where)) return true;
+		}
+		return false;
+	}
+
 	killBot(victim, killer, weapon) {
 		victim.alive = false;
 		victim.path = [];
+		victim.goal = undefined;
 		const wasArmed = victim.hasGun;
 		victim.hasGun = false;
+
+		// A kill in the open gives the killer away; one in a quiet corner does
+		// not. This is the whole tension of playing the murderer.
+		if (killer.role === Role.Murderer && this.witnessed(victim.pos, killer)) {
+			killer.exposedUntil = this.phaseTime + this.awareness.exposureSeconds;
+			this.emit("spotted", { name: killer.name, message: `Someone saw ${killer.name} do it` });
+		}
 
 		if (weapon === "revolver" && victim.role !== Role.Murderer) {
 			// Shooting the innocent costs the shooter their own life.

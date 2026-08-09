@@ -19,12 +19,14 @@ import { buildEntrance, buildClockTower } from "./map/districts/entrance.mjs";
 import { buildFerrisWheel, buildCarousel, buildBigTop } from "./map/districts/rides.mjs";
 import { buildFunhouse } from "./map/districts/funhouse.mjs";
 import { buildMidway } from "./map/districts/midway.mjs";
-import { buildBumperCars, buildGeneratorYard, buildPier } from "./map/districts/outskirts.mjs";
+import { buildBumperCars, buildGeneratorYard, buildPier, ENTRANCE_GAP } from "./map/districts/outskirts.mjs";
 import { buildLobby } from "./map/districts/lobby.mjs";
 
 const SEED = 0x484f4c4c; // "HOLL"
 const NAV_STEP = 14;
 const PLAY_HALF = 196;
+// Half-extent of the dead ground slab laid down by buildGround.
+const WASTELAND_HALF = 380;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..");
@@ -48,6 +50,7 @@ function main() {
 
 	registerStaticBlockers(b);
 	buildNavGraph(b, maze);
+	const pruned = pruneToLargestComponent(b);
 	placeRoundSpawns(b);
 	placeCoinSpots(b, rng);
 
@@ -55,7 +58,12 @@ function main() {
 		$schema: "./MapData.schema.json",
 		name: "Hollow Carnival",
 		generator: { seed: SEED, navStep: NAV_STEP },
-		bounds: { half: PLAY_HALF, groundY: LAYOUT.ground.y },
+		bounds: {
+			half: PLAY_HALF,
+			groundY: LAYOUT.ground.y,
+			wallHalf: LAYOUT.wall.half,
+			groundHalf: WASTELAND_HALF,
+		},
 		landmarks: b.landmarks,
 		spawns: b.spawns,
 		coinSpots: b.coinSpots,
@@ -78,6 +86,9 @@ function main() {
 	const stats = b.stats();
 	const bytes = JSON.stringify(doc).length;
 	console.log("Hollow Carnival map generated");
+	if (pruned > 0) {
+		console.log(`  note: dropped ${pruned} unreachable nav nodes`);
+	}
 	for (const [key, value] of Object.entries(stats)) {
 		console.log(`  ${key.padEnd(12)} ${value}`);
 	}
@@ -106,6 +117,11 @@ function registerStaticBlockers(b) {
 		center: [L.bumperCars.pos[0], L.bumperCars.pos[2]],
 		outer: [L.bumperCars.width + 2, L.bumperCars.depth + 2],
 		inner: [L.bumperCars.width - 6, L.bumperCars.depth - 6],
+		// Matches the gap left in the guard rail by buildBumperCars.
+		gapRect: {
+			center: [L.bumperCars.pos[0], L.bumperCars.pos[2] + L.bumperCars.depth / 2],
+			size: [ENTRANCE_GAP, 16],
+		},
 	});
 	b.blocker({
 		type: "rectBand",
@@ -119,7 +135,9 @@ function registerStaticBlockers(b) {
 		type: "rect",
 		center: [L.pier.pos[0], L.pier.pos[2]],
 		size: [L.pier.poolWidth + 6, L.pier.poolDepth + 6],
-		exclude: { center: [L.pier.pos[0], L.pier.pos[2]], size: [L.pier.poolWidth - 10, 15] },
+		// The pier deck crosses the whole basin, so the corridor has to punch
+		// out of both sides of the footprint or the deck becomes an island.
+		exclude: { center: [L.pier.pos[0], L.pier.pos[2]], size: [L.pier.poolWidth + 16, 15] },
 	});
 	b.blocker({ type: "rect", center: [0, LAYOUT.entrance.pos[2]], size: [26, 14] }); // turnstiles + booths
 }
@@ -226,6 +244,63 @@ function buildNavGraph(b, maze) {
 	}
 }
 
+/**
+ * Keeps only the largest connected component of the nav graph.
+ *
+ * A sealed-off pocket of nodes is worse than no nodes at all: spawn and coin
+ * placement would happily use them, and anything that walked in could never
+ * walk out. Blockers are hand-tuned per district, so this is the backstop that
+ * makes "the graph is fully connected" true by construction rather than by
+ * vigilance.
+ */
+function pruneToLargestComponent(b) {
+	const nodes = b.nav.nodes;
+	const adjacency = nodes.map(() => []);
+	for (const [a, c] of b.nav.edges) {
+		adjacency[a].push(c);
+		adjacency[c].push(a);
+	}
+
+	const component = new Array(nodes.length).fill(-1);
+	let best = { id: -1, size: 0 };
+	let next = 0;
+	for (let start = 0; start < nodes.length; start++) {
+		if (component[start] !== -1) continue;
+		const stack = [start];
+		component[start] = next;
+		let size = 0;
+		while (stack.length > 0) {
+			const current = stack.pop();
+			size++;
+			for (const neighbour of adjacency[current]) {
+				if (component[neighbour] === -1) {
+					component[neighbour] = next;
+					stack.push(neighbour);
+				}
+			}
+		}
+		if (size > best.size) best = { id: next, size };
+		next++;
+	}
+
+	if (next <= 1) return 0;
+
+	const remap = new Map();
+	const kept = [];
+	for (let index = 0; index < nodes.length; index++) {
+		if (component[index] !== best.id) continue;
+		remap.set(index, kept.length);
+		kept.push(nodes[index]);
+	}
+
+	const dropped = nodes.length - kept.length;
+	b.nav.nodes = kept;
+	b.nav.edges = b.nav.edges
+		.filter(([a, c]) => remap.has(a) && remap.has(c))
+		.map(([a, c]) => [remap.get(a), remap.get(c)]);
+	return dropped;
+}
+
 function nearestIndex(points, target) {
 	let best = -1;
 	let bestDist = Infinity;
@@ -257,8 +332,11 @@ function placeRoundSpawns(b, count = 26) {
 function placeCoinSpots(b, rng, count = 96) {
 	const nodes = b.nav.nodes.map((n) => n.pos);
 	const picks = farthestPointSample(nodes, count, [0, 2.2, 0]);
+	const clamp = (value) => Math.max(-PLAY_HALF, Math.min(PLAY_HALF, value));
 	for (const pos of picks) {
-		b.coinSpot([pos[0] + rng.float(-3, 3), 3, pos[2] + rng.float(-3, 3)]);
+		// The outermost nav nodes sit exactly on the play boundary, so the
+		// jitter has to be clamped or a coin ends up behind the hoarding.
+		b.coinSpot([clamp(pos[0] + rng.float(-3, 3)), 3, clamp(pos[2] + rng.float(-3, 3))]);
 	}
 
 	// A handful of hand-placed coins in places worth the risk of going.
