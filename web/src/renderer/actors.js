@@ -44,6 +44,16 @@ export class Actor {
 		this.glow.position.y = RIG.hipHeight + 3;
 		this.group.add(this.glow);
 
+		// A carried lamp, the counterpart of the client's HollowLantern. It is
+		// nearly invisible under the midway neon and is the only thing between
+		// a character and total darkness once the generator cuts out.
+		this.lantern = new THREE.Mesh(
+			new THREE.SphereGeometry(0.34, 10, 8),
+			new THREE.MeshBasicMaterial({ color: 0xffce96, transparent: true, opacity: 0.45 }),
+		);
+		this.lantern.position.set(-1.5, RIG.hipHeight - 0.4, 0.4);
+		this.group.add(this.lantern);
+
 		this.limbs = {};
 		for (const [key, x, isArm] of [
 			["leftArm", -1.5, true],
@@ -99,6 +109,19 @@ export class Actor {
 	clearTool() {
 		while (this.tool.children.length > 0) this.tool.remove(this.tool.children[0]);
 		this.tool.rotation.set(0, 0, 0);
+	}
+
+	/**
+	 * In a blackout the park's own lights are gone, so a character's halo and
+	 * lamp become the only thing lighting them. Without this the previsualizer
+	 * renders nine seconds of empty black every time the generator cuts out.
+	 */
+	setBlackout(amount) {
+		const k = Math.min(Math.max(amount, 0), 1);
+		this.lantern.material.opacity = 0.45 + 0.5 * k;
+		if (!this.alive) return;
+		this.glow.intensity = 6 + 20 * k;
+		this.glow.distance = 26 + 14 * k;
 	}
 
 	setPosition(x, y, z) {

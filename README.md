@@ -74,10 +74,10 @@ Intermission (20s)  ->  Grace (6s)  ->  Round (up to 180s)  ->  Post-round (9s) 
       lobby            roles dealt        knives out            payouts
 ```
 
-**Roles** are dealt at the start of Grace. One murderer per nine players (up to three), one
-sheriff per eleven (up to two), everyone else innocent. Anyone who drew a special role in the
-last two rounds goes to the back of the queue, so the same person does not get the knife three
-times running.
+**Roles** are dealt at the start of Grace. There is always one murderer, a second from 11 players
+and a third from 20; a sheriff appears at 3 players and a second at 14. Everyone else is innocent.
+Anyone who drew a special role in the last two rounds sinks down the pool, so the knife moves
+around the lobby instead of landing on the same unlucky player three rounds running.
 
 | Role | Has | Wants |
 |---|---|---|
@@ -241,7 +241,9 @@ by brightness and range and allows only a small number of shadow casters — the
 `Neon` material carrying the look, which is free.
 
 That difference is the main reason the browser is a *previsualizer* and not a preview: the
-geometry and colours are exact, the lighting is a good-faith approximation.
+geometry and colours are exact, the lighting is a good-faith approximation. The previsualizer also
+draws a coloured halo over every character so you can read the round at a glance, which is a
+spectator affordance the game itself does not give you.
 
 ## Known gaps
 
