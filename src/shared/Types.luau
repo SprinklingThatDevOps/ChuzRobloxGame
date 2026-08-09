@@ -19,6 +19,23 @@ export type PlayerState = {
 	alive: boolean,
 }
 
+--[[
+	Anyone the round can deal a role to.
+
+	The server does not care whether a body belongs to a person or to the bot
+	filler, so everything downstream of role assignment -- weapons, kills,
+	speeds, win conditions -- is written against this rather than against
+	Player. `player` is nil for bots, and is the only thing worth branching on:
+	you cannot fire a remote at a bot.
+]]
+export type Combatant = {
+	id: number,
+	name: string,
+	player: Player?,
+	character: Model?,
+	isBot: boolean,
+}
+
 export type Vector3Array = { number }
 
 export type MapPart = {

@@ -98,6 +98,16 @@ describe("config", function()
 		assertTrue(config.weapons.revolver.dropOnDeath, "the hero mechanic needs a dropped gun")
 	end)
 
+	test("the bot filler can start a round on its own", function()
+		local bots = config.bots
+		assertTrue(bots.fillTo >= config.round.minPlayers, "a solo player would still be stuck in intermission")
+		assertTrue(
+			bots.fillTo <= #Roblox.mapData().spawns.round,
+			"more bodies than round spawns; two would share a spawn point"
+		)
+		assertTrue(bots.decisionInterval > 0, "bots would re-plan every frame")
+	end)
+
 	test("a blackout is survivable", function()
 		assertTrue(config.blackout.durationSeconds < 15, "the blackout outstays its welcome")
 		assertTrue(config.blackout.warningSeconds > 0, "the blackout arrives with no warning")

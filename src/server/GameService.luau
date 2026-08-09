@@ -7,22 +7,23 @@
 	covered by tests; this file is the part that has to talk to players.
 ]]
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local RoundLogic = require(ReplicatedStorage.Shared.RoundLogic)
 local Net = require(ReplicatedStorage.Shared.Net)
+local Types = require(ReplicatedStorage.Shared.Types)
 
 local CharacterService = require(script.Parent.CharacterService)
 local WeaponService = require(script.Parent.WeaponService)
 local CoinService = require(script.Parent.CoinService)
 local BlackoutService = require(script.Parent.BlackoutService)
+local BotService = require(script.Parent.BotService)
 
 local GameService = {}
 GameService.__index = GameService
 
-type PlayerRecord = {
+type Record = {
 	role: string,
 	alive: boolean,
 	coins: number,
@@ -44,7 +45,11 @@ export type Service = typeof(setmetatable(
 		weapons: WeaponService.Service,
 		coins: CoinService.Service,
 		blackout: BlackoutService.Service,
-		records: { [Player]: PlayerRecord },
+		bots: BotService.Service,
+		records: { [Types.Combatant]: Record },
+		combatants: { Types.Combatant },
+		byPlayer: { [Player]: Types.Combatant },
+		byCharacter: { [Model]: Types.Combatant },
 		phase: string,
 		phaseEndsAt: number,
 		outcome: string,
@@ -66,6 +71,9 @@ function GameService.new(config: any, mapData: any, mapHandle: any): Service
 		coins = CoinService.new(config, mapData),
 		blackout = BlackoutService.new(config),
 		records = {},
+		combatants = {},
+		byPlayer = {},
+		byCharacter = {},
 		phase = RoundLogic.Phase.Intermission,
 		phaseEndsAt = 0,
 		outcome = RoundLogic.Outcome.None,
@@ -73,23 +81,51 @@ function GameService.new(config: any, mapData: any, mapHandle: any): Service
 		running = false,
 	}, GameService)
 
+	local function roleOf(combatant: Types.Combatant): string
+		local record = self.records[combatant]
+		return if record then record.role else RoundLogic.Role.Spectator
+	end
+	local function aliveOf(combatant: Types.Combatant): boolean
+		local record = self.records[combatant]
+		return record ~= nil and record.alive
+	end
+
 	self.weapons = WeaponService.new(config, {
-		getRole = function(player: Player): string
-			local record = self.records[player]
-			return if record then record.role else RoundLogic.Role.Spectator
-		end,
-		isAlive = function(player: Player): boolean
-			local record = self.records[player]
-			return record ~= nil and record.alive
-		end,
-		onKill = function(victim: Player, killer: Player, weapon: string)
+		getRole = roleOf,
+		isAlive = aliveOf,
+		onKill = function(victim: Types.Combatant, killer: Types.Combatant, weapon: string)
 			GameService.handleKill(self :: any, victim, killer, weapon)
 		end,
 		onGunDropped = function(position: Vector3, ammo: number)
 			GameService.spawnGunPickup(self :: any, position, ammo)
 		end,
-		announce = function(player: Player, message: string)
-			Net.event("Announce"):FireClient(player, message)
+		announce = function(combatant: Types.Combatant, message: string)
+			if combatant.player then
+				Net.event("Announce"):FireClient(combatant.player, message)
+			end
+		end,
+		combatants = function(): { Types.Combatant }
+			return self.combatants
+		end,
+		fromCharacter = function(character: Model): Types.Combatant?
+			return self.byCharacter[character]
+		end,
+		characterOf = function(combatant: Types.Combatant): Model?
+			return self.characters:characterOf(combatant)
+		end,
+	})
+
+	self.bots = BotService.new(config, mapData, self.characters, self.weapons, {
+		getRole = roleOf,
+		isAlive = aliveOf,
+		combatants = function(): { Types.Combatant }
+			return self.combatants
+		end,
+		phase = function(): string
+			return self.phase
+		end,
+		blackout = function(): boolean
+			return self.blackout:isActive()
 		end,
 	})
 
@@ -104,11 +140,11 @@ function GameService.new(config: any, mapData: any, mapHandle: any): Service
 	end
 
 	self.coins.canCollect = function(player: Player): boolean
-		local record = self.records[player]
+		local record = self.records[self.byPlayer[player]]
 		return record ~= nil and record.alive and record.role ~= RoundLogic.Role.Murderer and self.phase == RoundLogic.Phase.Round
 	end
 	self.coins.onCollect = function(player: Player, value: number)
-		local record = self.records[player]
+		local record = self.records[self.byPlayer[player]]
 		if not record then
 			return
 		end
@@ -119,7 +155,7 @@ function GameService.new(config: any, mapData: any, mapHandle: any): Service
 	return self :: any
 end
 
-function GameService.blankRecord(): PlayerRecord
+function GameService.blankRecord(): Record
 	return {
 		role = RoundLogic.Role.Spectator,
 		alive = false,
@@ -135,30 +171,96 @@ function GameService.blankRecord(): PlayerRecord
 	}
 end
 
-function GameService.addPlayer(self: Service, player: Player)
+--[[
+	Registration. Players and bots both arrive here; the registry is what lets
+	a bullet fired at a character find the record behind it.
+]]
+function GameService.register(self: Service, combatant: Types.Combatant)
 	local record = GameService.blankRecord()
 	record.stamina = self.config.movement.staminaMax
-	self.records[player] = record
+	self.records[combatant] = record
+	table.insert(self.combatants, combatant)
+end
+
+function GameService.unregister(self: Service, combatant: Types.Combatant)
+	self.records[combatant] = nil
+	local index = table.find(self.combatants, combatant)
+	if index then
+		table.remove(self.combatants, index)
+	end
+	if combatant.character then
+		self.byCharacter[combatant.character] = nil
+	end
+end
+
+function GameService.trackCharacter(self: Service, combatant: Types.Combatant)
+	local character = self.characters:characterOf(combatant)
+	if character then
+		self.byCharacter[character] = combatant
+		combatant.character = character
+	end
+end
+
+function GameService.addPlayer(self: Service, player: Player)
+	local combatant: Types.Combatant = {
+		id = player.UserId,
+		name = player.DisplayName,
+		player = player,
+		character = nil,
+		isBot = false,
+	}
+	self.byPlayer[player] = combatant
+	GameService.register(self, combatant)
 
 	local spawnList = self.mapData.spawns.lobby
-	local spawnSpec = spawnList[(player.UserId % #spawnList) + 1]
-	self.characters:spawnAt(player, spawnSpec)
+	local spawnSpec = spawnList[(math.abs(player.UserId) % #spawnList) + 1]
+	self.characters:spawnAt(combatant, spawnSpec)
+	GameService.trackCharacter(self, combatant)
 	Net.event("PhaseChanged"):FireClient(player, self.phase, math.max(0, self.phaseEndsAt - now()))
 end
 
 function GameService.removePlayer(self: Service, player: Player)
-	self.records[player] = nil
+	local combatant = self.byPlayer[player]
+	if combatant then
+		GameService.unregister(self, combatant)
+	end
+	self.byPlayer[player] = nil
+end
+
+function GameService.humanCount(self: Service): number
+	local count = 0
+	for _, combatant in self.combatants do
+		if not combatant.isBot then
+			count += 1
+		end
+	end
+	return count
+end
+
+--[[
+	Bots are re-established every intermission so the population tracks the
+	number of humans present. Their records live alongside the players'.
+]]
+function GameService.refreshBots(self: Service)
+	for _, combatant in self.bots:combatants() do
+		GameService.unregister(self, combatant)
+	end
+	self.bots:despawnAll()
+	self.bots:fill(GameService.humanCount(self))
+	for _, combatant in self.bots:combatants() do
+		GameService.register(self, combatant)
+	end
 end
 
 function GameService.announceAll(_self: Service, message: string)
 	Net.event("Announce"):FireAllClients(message)
 end
 
-function GameService.eligiblePlayers(self: Service): { Player }
+function GameService.eligible(self: Service): { Types.Combatant }
 	local list = {}
-	for _, player in Players:GetPlayers() do
-		if self.records[player] then
-			table.insert(list, player)
+	for _, combatant in self.combatants do
+		if self.records[combatant] then
+			table.insert(list, combatant)
 		end
 	end
 	return list
@@ -178,7 +280,7 @@ end
 ]]
 function GameService.refreshSpeeds(self: Service)
 	local movement = self.config.movement
-	for player, record in self.records do
+	for combatant, record in self.records do
 		if not record.alive then
 			continue
 		end
@@ -192,7 +294,7 @@ function GameService.refreshSpeeds(self: Service)
 				speed *= self.config.abilities.shroud.speedMultiplier
 			end
 		end
-		self.characters:setSpeed(player, speed)
+		self.characters:setSpeed(combatant, speed)
 	end
 end
 
@@ -203,10 +305,10 @@ function GameService.setPhase(self: Service, phase: string)
 end
 
 function GameService.startRound(self: Service)
-	local players = GameService.eligiblePlayers(self)
+	local roster = GameService.eligible(self)
 	local seeds = {}
-	for index, player in players do
-		local record = self.records[player]
+	for index, combatant in roster do
+		local record = self.records[combatant]
 		table.insert(seeds, { id = index, roleCooldown = record.roleCooldown })
 	end
 
@@ -227,8 +329,8 @@ function GameService.startRound(self: Service)
 	GameService.clearGunPickups(self)
 	self.coins:respawnAll()
 
-	for index, player in players do
-		local record = self.records[player]
+	for index, combatant in roster do
+		local record = self.records[combatant]
 		record.role = assignment[index] or RoundLogic.Role.Innocent
 		record.alive = true
 		record.coins = 0
@@ -245,16 +347,22 @@ function GameService.startRound(self: Service)
 		end
 
 		local spawnSpec = spawns[order[((index - 1) % #order) + 1]]
-		self.characters:spawnAt(player, spawnSpec)
+		if combatant.isBot then
+			self.bots:spawnBody(combatant)
+		end
+		self.characters:spawnAt(combatant, spawnSpec)
+		GameService.trackCharacter(self, combatant)
 
 		if record.role == RoundLogic.Role.Murderer then
-			self.weapons:giveKnife(player)
+			self.weapons:giveKnife(combatant)
 		elseif record.role == RoundLogic.Role.Sheriff then
-			self.weapons:giveRevolver(player)
+			self.weapons:giveRevolver(combatant)
 		end
 
 		local roleInfo = self.config.roles[string.lower(record.role)]
-		Net.event("RoleAssigned"):FireClient(player, record.role, roleInfo)
+		if combatant.player then
+			Net.event("RoleAssigned"):FireClient(combatant.player, record.role, roleInfo)
+		end
 	end
 
 	self.outcome = RoundLogic.Outcome.None
@@ -262,7 +370,7 @@ function GameService.startRound(self: Service)
 	GameService.refreshSpeeds(self)
 end
 
-function GameService.handleKill(self: Service, victim: Player, killer: Player, weapon: string)
+function GameService.handleKill(self: Service, victim: Types.Combatant, killer: Types.Combatant, weapon: string)
 	local victimRecord = self.records[victim]
 	local killerRecord = self.records[killer]
 	if not victimRecord or not killerRecord or not victimRecord.alive then
@@ -274,18 +382,26 @@ function GameService.handleKill(self: Service, victim: Player, killer: Player, w
 	local misfire = weapon == "revolver" and victimRecord.role ~= RoundLogic.Role.Murderer
 
 	victimRecord.alive = false
-	self.characters:eliminate(victim, weapon)
+	local victimBody = self.characters:characterOf(victim)
 	self.weapons:dropRevolver(victim)
+	self.characters:eliminate(victim, weapon)
+	if victimBody then
+		self.byCharacter[victimBody] = nil
+	end
 
 	if misfire then
 		killerRecord.alive = false
-		self.characters:eliminate(killer, "misfire")
+		local killerBody = self.characters:characterOf(killer)
 		self.weapons:dropRevolver(killer)
+		self.characters:eliminate(killer, "misfire")
+		if killerBody then
+			self.byCharacter[killerBody] = nil
+		end
 		Net.event("KillFeed"):FireAllClients({
-			victim = victim.DisplayName,
-			killer = killer.DisplayName,
+			victim = victim.name,
+			killer = killer.name,
 			weapon = weapon,
-			message = `{killer.DisplayName} shot an innocent and paid for it`,
+			message = `{killer.name} shot an innocent and paid for it`,
 		})
 	else
 		killerRecord.kills += 1
@@ -293,12 +409,12 @@ function GameService.handleKill(self: Service, victim: Player, killer: Player, w
 			killerRecord.killedMurderer = true
 		end
 		Net.event("KillFeed"):FireAllClients({
-			victim = victim.DisplayName,
-			killer = if weapon == "revolver" then killer.DisplayName else nil,
+			victim = victim.name,
+			killer = if weapon == "revolver" then killer.name else nil,
 			weapon = weapon,
 			message = if weapon == "revolver"
-				then `{killer.DisplayName} put down the murderer`
-				else `{victim.DisplayName} was found dead`,
+				then `{killer.name} put down the murderer`
+				else `{victim.name} was found dead`,
 		})
 	end
 
@@ -360,23 +476,25 @@ function GameService.stepGunPickups(self: Service)
 		if drop.taken then
 			continue
 		end
-		for player, record in self.records do
+		for combatant, record in self.records do
 			if not record.alive or record.role == RoundLogic.Role.Murderer then
 				continue
 			end
-			if self.weapons:hasWeapon(player, "revolver") then
+			if self.weapons:hasWeapon(combatant, "revolver") then
 				continue
 			end
-			local root = self.characters:rootOf(player)
+			local root = self.characters:rootOf(combatant)
 			if not root or (root.Position - drop.part.Position).Magnitude > 6 then
 				continue
 			end
 			drop.taken = true
 			drop.part:Destroy()
 			record.role = RoundLogic.Role.Hero
-			self.weapons:giveRevolver(player, drop.ammo)
-			Net.event("RoleAssigned"):FireClient(player, record.role, self.config.roles.hero)
-			GameService.announceAll(self, `{player.DisplayName} picked up the revolver`)
+			self.weapons:giveRevolver(combatant, drop.ammo)
+			if combatant.player then
+				Net.event("RoleAssigned"):FireClient(combatant.player, record.role, self.config.roles.hero)
+			end
+			GameService.announceAll(self, `{combatant.name} picked up the revolver`)
 			break
 		end
 	end
@@ -384,8 +502,8 @@ end
 
 function GameService.stepStamina(self: Service, delta: number)
 	local movement = self.config.movement
-	for player, record in self.records do
-		if not record.alive then
+	for combatant, record in self.records do
+		if not record.alive or combatant.isBot then
 			continue
 		end
 		local before = record.stamina
@@ -402,20 +520,20 @@ function GameService.stepStamina(self: Service, delta: number)
 				record.stamina = math.min(movement.staminaMax, record.stamina + movement.staminaRegenPerSecond * delta)
 			end
 		end
-		if math.abs(record.stamina - before) > 0.5 then
-			Net.event("StaminaChanged"):FireClient(player, record.stamina / movement.staminaMax)
+		if math.abs(record.stamina - before) > 0.5 and combatant.player then
+			Net.event("StaminaChanged"):FireClient(combatant.player, record.stamina / movement.staminaMax)
 		end
 	end
 end
 
 function GameService.stepShroud(self: Service)
-	for player, record in self.records do
+	for combatant, record in self.records do
 		if record.role ~= RoundLogic.Role.Murderer or not record.alive then
 			continue
 		end
 		if record.shroudUntil > 0 and now() >= record.shroudUntil then
 			record.shroudUntil = 0
-			self.characters:setTransparency(player, 0)
+			self.characters:setTransparency(combatant, 0)
 			GameService.refreshSpeeds(self)
 		end
 	end
@@ -423,37 +541,40 @@ end
 
 function GameService.bindRemotes(self: Service)
 	Net.event("RequestAttack").OnServerEvent:Connect(function(player: Player)
-		local record = self.records[player]
-		if not record or not record.alive or self.phase ~= RoundLogic.Phase.Round then
+		local combatant = self.byPlayer[player]
+		local record = combatant and self.records[combatant]
+		if not combatant or not record or not record.alive or self.phase ~= RoundLogic.Phase.Round then
 			return
 		end
-		self.weapons:slash(player)
+		self.weapons:slash(combatant)
 	end)
 
 	Net.event("RequestThrow").OnServerEvent:Connect(function(player: Player, direction: any)
-		local record = self.records[player]
-		if not record or not record.alive or self.phase ~= RoundLogic.Phase.Round then
+		local combatant = self.byPlayer[player]
+		local record = combatant and self.records[combatant]
+		if not combatant or not record or not record.alive or self.phase ~= RoundLogic.Phase.Round then
 			return
 		end
 		if typeof(direction) ~= "Vector3" or direction.Magnitude < 0.01 then
 			return
 		end
-		self.weapons:throwKnife(player, direction)
+		self.weapons:throwKnife(combatant, direction)
 	end)
 
 	Net.event("RequestShoot").OnServerEvent:Connect(function(player: Player, direction: any)
-		local record = self.records[player]
-		if not record or not record.alive or self.phase ~= RoundLogic.Phase.Round then
+		local combatant = self.byPlayer[player]
+		local record = combatant and self.records[combatant]
+		if not combatant or not record or not record.alive or self.phase ~= RoundLogic.Phase.Round then
 			return
 		end
 		if typeof(direction) ~= "Vector3" or direction.Magnitude < 0.01 then
 			return
 		end
-		self.weapons:shoot(player, direction)
+		self.weapons:shoot(combatant, direction)
 	end)
 
 	Net.event("RequestSprint").OnServerEvent:Connect(function(player: Player, wants: any)
-		local record = self.records[player]
+		local record = self.records[self.byPlayer[player]]
 		if not record or not record.alive then
 			return
 		end
@@ -462,8 +583,9 @@ function GameService.bindRemotes(self: Service)
 	end)
 
 	Net.event("RequestAbility").OnServerEvent:Connect(function(player: Player, ability: any)
-		local record = self.records[player]
-		if not record or not record.alive or ability ~= "shroud" then
+		local combatant = self.byPlayer[player]
+		local record = combatant and self.records[combatant]
+		if not combatant or not record or not record.alive or ability ~= "shroud" then
 			return
 		end
 		if record.role ~= RoundLogic.Role.Murderer or now() < record.shroudReadyAt then
@@ -472,13 +594,13 @@ function GameService.bindRemotes(self: Service)
 		local shroud = self.config.abilities.shroud
 		record.shroudUntil = now() + shroud.duration
 		record.shroudReadyAt = now() + shroud.cooldown
-		self.characters:setTransparency(player, shroud.transparency)
+		self.characters:setTransparency(combatant, shroud.transparency)
 		GameService.refreshSpeeds(self)
 		Net.event("AbilityState"):FireClient(player, "shroud", shroud.duration, shroud.cooldown)
 	end)
 
 	Net.fn("GetSnapshot").OnServerInvoke = function(player: Player)
-		local record = self.records[player]
+		local record = self.records[self.byPlayer[player]]
 		return {
 			phase = self.phase,
 			timeLeft = math.max(0, self.phaseEndsAt - now()),
@@ -491,7 +613,11 @@ end
 
 function GameService.awardPayouts(self: Service)
 	local innocentsWon = self.outcome == RoundLogic.Outcome.InnocentsWin or self.outcome == RoundLogic.Outcome.TimeUp
-	for player, record in self.records do
+	for combatant, record in self.records do
+		if not combatant.player then
+			continue
+		end
+		local player = combatant.player
 		local teamWon = if record.role == RoundLogic.Role.Murderer then not innocentsWon else innocentsWon
 		local amount = RoundLogic.payout(self.config, {
 			role = record.role,
@@ -522,6 +648,7 @@ function GameService.run(self: Service)
 	GameService.bindRemotes(self)
 	self.coins:start()
 	self.blackout:start()
+	self.bots:start()
 
 	RunService.Heartbeat:Connect(function(delta)
 		if self.phase == RoundLogic.Phase.Round then
@@ -541,18 +668,27 @@ function GameService.run(self: Service)
 			GameService.clearGunPickups(self)
 			self.blackout:endRound()
 
-			for player, record in self.records do
+			-- Bots are rebuilt here, before the headcount is taken, so the
+			-- filler shrinks as real players arrive.
+			GameService.refreshBots(self)
+
+			local spawns = self.mapData.spawns.lobby
+			local slot = 0
+			for combatant, record in self.records do
 				record.role = RoundLogic.Role.Spectator
 				record.alive = false
-				local spawns = self.mapData.spawns.lobby
-				self.characters:spawnAt(player, spawns[(player.UserId % #spawns) + 1])
+				if combatant.player then
+					self.characters:spawnAt(combatant, spawns[(slot % #spawns) + 1])
+					GameService.trackCharacter(self, combatant)
+				end
+				slot += 1
 			end
 
 			while now() < self.phaseEndsAt do
 				task.wait(0.25)
 			end
 
-			if #GameService.eligiblePlayers(self) < self.config.round.minPlayers then
+			if #GameService.eligible(self) < self.config.round.minPlayers then
 				GameService.announceAll(self, "Waiting for more players…")
 				task.wait(2)
 				continue
