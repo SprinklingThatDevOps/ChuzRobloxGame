@@ -201,6 +201,17 @@ function GameService.trackCharacter(self: Service, combatant: Types.Combatant)
 	end
 end
 
+--[[
+	Forgets the body a combatant is currently wearing. Called before handing a
+	bot a fresh rig, so the registry cannot accumulate entries pointing at
+	destroyed models.
+]]
+function GameService.untrackCharacter(self: Service, combatant: Types.Combatant)
+	if combatant.character then
+		self.byCharacter[combatant.character] = nil
+	end
+end
+
 function GameService.addPlayer(self: Service, player: Player)
 	local combatant: Types.Combatant = {
 		id = player.UserId,
@@ -348,6 +359,7 @@ function GameService.startRound(self: Service)
 
 		local spawnSpec = spawns[order[((index - 1) % #order) + 1]]
 		if combatant.isBot then
+			GameService.untrackCharacter(self, combatant)
 			self.bots:spawnBody(combatant)
 		end
 		self.characters:spawnAt(combatant, spawnSpec)
@@ -672,15 +684,20 @@ function GameService.run(self: Service)
 			-- filler shrinks as real players arrive.
 			GameService.refreshBots(self)
 
+			-- Bots wait out the intermission on a pad like everyone else. It
+			-- costs a rig each, and it is the difference between a lobby that
+			-- looks populated and one that looks broken.
 			local spawns = self.mapData.spawns.lobby
 			local slot = 0
 			for combatant, record in self.records do
 				record.role = RoundLogic.Role.Spectator
 				record.alive = false
-				if combatant.player then
-					self.characters:spawnAt(combatant, spawns[(slot % #spawns) + 1])
-					GameService.trackCharacter(self, combatant)
+				if combatant.isBot then
+					GameService.untrackCharacter(self, combatant)
+					self.bots:spawnBody(combatant)
 				end
+				self.characters:spawnAt(combatant, spawns[(slot % #spawns) + 1])
+				GameService.trackCharacter(self, combatant)
 				slot += 1
 			end
 
