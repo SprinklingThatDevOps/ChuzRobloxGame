@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Hollow Carnival — Previsualizer</title>
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="stylesheet" href="./src/ui/hud.css" />
+	</head>
+	<body>
+		<canvas id="stage"></canvas>
+
+		<div id="loading">
+			<div class="loading-inner">
+				<div class="loading-title">HOLLOW CARNIVAL</div>
+				<div class="loading-bar"><span id="loading-fill"></span></div>
+				<div class="loading-status" id="loading-status">Raising the big top…</div>
+			</div>
+		</div>
+
+		<div id="hud" hidden>
+			<div class="vignette"></div>
+
+			<header class="hud-top">
+				<div class="brand">
+					<div class="brand-title">HOLLOW CARNIVAL</div>
+					<div class="brand-sub" id="brand-sub">The rides never stopped.</div>
+				</div>
+				<div class="phase-block">
+					<div class="phase-name" id="phase-name">INTERMISSION</div>
+					<div class="phase-timer" id="phase-timer">0:20</div>
+				</div>
+				<div class="roster">
+					<div class="roster-row"><span class="dot innocent"></span><span id="count-innocent">0</span> Innocent</div>
+					<div class="roster-row"><span class="dot sheriff"></span><span id="count-sheriff">0</span> Sheriff</div>
+					<div class="roster-row"><span class="dot murderer"></span><span id="count-murderer">0</span> Murderer</div>
+					<div class="roster-row"><span class="dot dead"></span><span id="count-dead">0</span> Down</div>
+				</div>
+			</header>
+
+			<div class="hud-badge">PREVISUALIZATION · same MapData.json &amp; GameConfig.json as the Roblox build</div>
+
+			<div class="feed" id="feed"></div>
+
+			<div class="shot-label" id="shot-label">ESTABLISHING</div>
+
+			<footer class="hud-bottom">
+				<div class="coinbar">
+					<span class="coin-icon"></span>
+					<span id="coin-count">0</span>
+					<span class="coin-label">coins collected this round</span>
+				</div>
+				<div class="controls" id="controls">
+					<kbd>Space</kbd> pause · <kbd>C</kbd> camera · <kbd>F</kbd> free-fly · <kbd>1-4</kbd> speed · <kbd>R</kbd> restart round
+				</div>
+			</footer>
+
+			<div class="banner" id="banner" hidden>
+				<div class="banner-title" id="banner-title"></div>
+				<div class="banner-sub" id="banner-sub"></div>
+			</div>
+		</div>
+
+		<script type="module" src="./src/main.js"></script>
+	</body>
+</html>

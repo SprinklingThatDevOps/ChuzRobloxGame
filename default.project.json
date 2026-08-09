@@ -1,0 +1,159 @@
+{
+	"name": "HollowCarnival",
+	"tree": {
+		"$className": "DataModel",
+
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Shared": {
+				"$path": "src/shared"
+			},
+			"GameConfig": {
+				"$path": "config/GameConfig.json"
+			},
+			"MapData": {
+				"$path": "build/MapData.json"
+			}
+		},
+
+		"ServerScriptService": {
+			"$className": "ServerScriptService",
+			"Server": {
+				"$path": "src/server"
+			}
+		},
+
+		"StarterPlayer": {
+			"$className": "StarterPlayer",
+			"$properties": {
+				"CharacterWalkSpeed": 16,
+				"CharacterJumpPower": 48,
+				"EnableMouseLockOption": true
+			},
+			"StarterPlayerScripts": {
+				"$className": "StarterPlayerScripts",
+				"Client": {
+					"$path": "src/client"
+				}
+			}
+		},
+
+		"Players": {
+			"$className": "Players",
+			"$properties": {
+				"CharacterAutoLoads": false,
+				"RespawnTime": 2
+			}
+		},
+
+		"Workspace": {
+			"$className": "Workspace",
+			"$properties": {
+				"FilteringEnabled": true,
+				"Gravity": 178
+			},
+			"Terrain": {
+				"$className": "Terrain"
+			}
+		},
+
+		"Lighting": {
+			"$className": "Lighting",
+			"$properties": {
+				"Technology": "Future",
+				"Ambient": [
+					0.094,
+					0.07,
+					0.133
+				],
+				"OutdoorAmbient": [
+					0.149,
+					0.11,
+					0.212
+				],
+				"Brightness": 1.15,
+				"ClockTime": 0.35,
+				"GeographicLatitude": 12,
+				"GlobalShadows": true,
+				"FogColor": [
+					0.086,
+					0.055,
+					0.149
+				],
+				"FogStart": 40,
+				"FogEnd": 340,
+				"EnvironmentDiffuseScale": 0.35,
+				"EnvironmentSpecularScale": 0.35
+			},
+			"CarnivalAtmosphere": {
+				"$className": "Atmosphere",
+				"$properties": {
+					"Density": 0.42,
+					"Offset": 0.15,
+					"Color": [
+						0.396,
+						0.318,
+						0.494
+					],
+					"Decay": [
+						0.243,
+						0.165,
+						0.376
+					],
+					"Glare": 0.35,
+					"Haze": 2.4
+				}
+			},
+			"CarnivalBloom": {
+				"$className": "BloomEffect",
+				"$properties": {
+					"Intensity": 1.35,
+					"Size": 28,
+					"Threshold": 0.85
+				}
+			},
+			"CarnivalGrade": {
+				"$className": "ColorCorrectionEffect",
+				"$properties": {
+					"Brightness": 0,
+					"Contrast": 0.16,
+					"Saturation": 0.12,
+					"TintColor": [
+						0.965,
+						0.929,
+						1
+					]
+				}
+			},
+			"CarnivalBlur": {
+				"$className": "BlurEffect",
+				"$properties": {
+					"Size": 0
+				}
+			},
+			"CarnivalSunRays": {
+				"$className": "SunRaysEffect",
+				"$properties": {
+					"Intensity": 0.05,
+					"Spread": 0.8
+				}
+			}
+		},
+
+		"SoundService": {
+			"$className": "SoundService",
+			"$properties": {
+				"RespectFilteringEnabled": true,
+				"AmbientReverb": "Hangar",
+				"DistanceFactor": 8
+			}
+		},
+
+		"StarterGui": {
+			"$className": "StarterGui",
+			"$properties": {
+				"ShowDevelopmentGui": true
+			}
+		}
+	}
+}

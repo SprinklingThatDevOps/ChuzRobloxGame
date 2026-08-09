@@ -1,0 +1,167 @@
+{
+	"identity": {
+		"title": "HOLLOW CARNIVAL",
+		"tagline": "The rides never stopped. Neither did the killer.",
+		"version": "1.0.0"
+	},
+	"round": {
+		"minPlayers": 2,
+		"intermissionSeconds": 20,
+		"graceSeconds": 6,
+		"roundSeconds": 180,
+		"postRoundSeconds": 9,
+		"suddenDeathAtSecondsLeft": 45
+	},
+	"roles": {
+		"innocent": {
+			"displayName": "Innocent",
+			"color": [126, 200, 255],
+			"blurb": "Gather coins. Stay alive. Trust nobody."
+		},
+		"sheriff": {
+			"displayName": "Sheriff",
+			"color": [255, 214, 96],
+			"blurb": "You carry the only gun. Make it count."
+		},
+		"murderer": {
+			"displayName": "Murderer",
+			"color": [255, 74, 92],
+			"blurb": "Everyone here is a loose end."
+		},
+		"hero": {
+			"displayName": "Hero",
+			"color": [156, 255, 186],
+			"blurb": "You picked up the fallen revolver."
+		},
+		"spectator": {
+			"displayName": "Spectator",
+			"color": [170, 170, 180],
+			"blurb": "Watching from the dark."
+		}
+	},
+	"assignment": {
+		"sheriffMinPlayers": 3,
+		"murdererBaseCount": 1,
+		"murdererPerExtraPlayers": 9,
+		"murdererMaxCount": 3,
+		"sheriffBaseCount": 1,
+		"sheriffPerExtraPlayers": 11,
+		"sheriffMaxCount": 2,
+		"recentRoleCooldownRounds": 2
+	},
+	"movement": {
+		"walkSpeed": 16,
+		"sprintSpeed": 24,
+		"murdererSpeedBonus": 1.5,
+		"jumpPower": 48,
+		"staminaMax": 100,
+		"staminaDrainPerSecond": 22,
+		"staminaRegenPerSecond": 14,
+		"staminaRegenDelay": 1.1
+	},
+	"weapons": {
+		"knife": {
+			"displayName": "Carnival Knife",
+			"slashRange": 9,
+			"slashArcDegrees": 70,
+			"slashCooldown": 1.15,
+			"throwSpeed": 95,
+			"throwCooldown": 7,
+			"throwLifetime": 3,
+			"throwGravityScale": 0.35
+		},
+		"revolver": {
+			"displayName": "Ticket-Taker Revolver",
+			"magazine": 6,
+			"reloadSeconds": 2.6,
+			"fireCooldown": 0.55,
+			"range": 260,
+			"bulletSpeed": 420,
+			"innocentKillPenalty": "shooter_dies",
+			"dropOnDeath": true,
+			"dropDespawnSeconds": 60
+		}
+	},
+	"abilities": {
+		"shroud": {
+			"displayName": "Shroud",
+			"owner": "murderer",
+			"duration": 3.25,
+			"cooldown": 26,
+			"transparency": 0.72,
+			"speedMultiplier": 1.12
+		},
+		"listen": {
+			"displayName": "Carnival Ears",
+			"owner": "all",
+			"duration": 2.5,
+			"cooldown": 18,
+			"radius": 70,
+			"description": "Freeze in place to ping nearby footsteps."
+		}
+	},
+	"bots": {
+		"visionRange": 95,
+		"blackoutVisionRange": 32,
+		"recogniseRange": 18,
+		"exposureSeconds": 6,
+		"witnessRange": 75,
+		"fireRange": 45,
+		"decisionInterval": 0.3
+	},
+	"coins": {
+		"activeCount": 42,
+		"respawnSeconds": 26,
+		"value": 1,
+		"pickupRadius": 5,
+		"bobHeight": 0.6,
+		"bobSpeed": 1.8,
+		"spinSpeed": 90
+	},
+	"payouts": {
+		"survive": 10,
+		"innocentWin": 15,
+		"murdererWin": 30,
+		"sheriffKillsMurderer": 35,
+		"heroKillsMurderer": 45,
+		"murdererKill": 6,
+		"perCoin": 1
+	},
+	"blackout": {
+		"enabled": true,
+		"firstAtRoundSecond": 42,
+		"intervalSeconds": 52,
+		"durationSeconds": 9,
+		"warningSeconds": 3.5,
+		"murdererSpeedMultiplier": 1.08
+	},
+	"lighting": {
+		"normal": {
+			"ambient": [24, 18, 34],
+			"outdoorAmbient": [38, 28, 54],
+			"brightness": 1.15,
+			"clockTime": 0.35,
+			"fogColor": [22, 14, 38],
+			"fogStart": 60,
+			"fogEnd": 520,
+			"exposure": 0.15
+		},
+		"blackout": {
+			"ambient": [4, 3, 8],
+			"outdoorAmbient": [6, 4, 12],
+			"brightness": 0.18,
+			"clockTime": 0.1,
+			"fogColor": [5, 3, 10],
+			"fogStart": 10,
+			"fogEnd": 115,
+			"exposure": -0.35
+		},
+		"transitionSeconds": 1.4
+	},
+	"audioMood": {
+		"intermission": "calliope_warm",
+		"round": "calliope_detuned",
+		"blackout": "generator_hum",
+		"postRound": "carnival_sting"
+	}
+}
