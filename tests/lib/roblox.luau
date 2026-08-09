@@ -211,4 +211,8 @@ function Roblox.config(): any
 	return serde.decode("json", fs.readFile("config/GameConfig.json"))
 end
 
+function Roblox.mapData(): any
+	return serde.decode("json", fs.readFile("build/MapData.json"))
+end
+
 return Roblox
