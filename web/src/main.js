@@ -155,6 +155,21 @@ async function boot() {
 		window.__hollow = {
 			ready: true,
 			step: (dt) => tick(dt),
+			// Advances the simulation without drawing it. Rendering is the
+			// expensive half on a machine with no GPU, so skipping ahead to an
+			// interesting round costs seconds instead of minutes.
+			fastForward: (seconds) => {
+				let remaining = seconds;
+				while (remaining > 1e-6) {
+					const step = Math.min(FIXED_STEP, remaining);
+					sim.update(step);
+					remaining -= step;
+				}
+				hud.clearEvents();
+				hud.hideBanner();
+				bannerTimer = 0;
+				director.snap();
+			},
 			state: () => ({ phase: sim.phase, timeLeft: sim.timeLeft, outcome: sim.outcome, shot: director.shotName }),
 			setShot: (name) => {
 				director.shot = name;

@@ -72,6 +72,20 @@ export class Director {
 		this.shotTime = this.shotDuration;
 	}
 
+	/**
+	 * Puts the camera on its mark with no travel. Used after skipping the
+	 * simulation forward, where the usual glide would spend the opening
+	 * seconds of a capture crossing the map from wherever the camera was.
+	 */
+	snap() {
+		this.free = false;
+		this.chooseShot();
+		this.composeShot(0);
+		this.camera.position.copy(this.desiredPosition);
+		this.currentTarget.copy(this.desiredTarget);
+		this.camera.lookAt(this.currentTarget);
+	}
+
 	punch(amount = 1) {
 		this.shakeAmount = Math.min(2.4, this.shakeAmount + amount);
 	}

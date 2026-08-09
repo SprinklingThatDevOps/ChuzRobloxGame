@@ -61,6 +61,10 @@ export class Hud {
 		while (this.el.feed.children.length > FEED_LIMIT) this.el.feed.removeChild(this.el.feed.firstChild);
 	}
 
+	clearEvents() {
+		this.el.feed.replaceChildren();
+	}
+
 	showBanner(title, subtitle) {
 		this.el.bannerTitle.textContent = title;
 		this.el.bannerSub.textContent = subtitle;

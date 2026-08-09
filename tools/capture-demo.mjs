@@ -68,13 +68,16 @@ async function main() {
 	const totalFrames = Math.round(FPS * SECONDS);
 	const dt = 1 / FPS;
 
-	// Warm-up advances the clock without capturing, so recording can start at
-	// an interesting moment instead of on an empty lobby.
-	const warmup = Number(args.warmup ?? 0);
-	for (let i = 0; i < Math.round(warmup * FPS); i++) {
-		await page.evaluate((step) => window.__hollow.step(step), dt);
+	// Skip ahead, in simulation seconds, so recording can start on an
+	// interesting round instead of an empty lobby. `tools/sim-report.mjs
+	// --timeline` prints the beats of the (deterministic) previsualizer round
+	// and the skip that lands on them.
+	const skip = Number(args.skip ?? 0);
+	if (skip > 0) {
+		await page.evaluate((seconds) => window.__hollow.fastForward(seconds), skip);
+		const state = await page.evaluate(() => window.__hollow.state());
+		console.log(`Skipped ${skip}s of simulation; now in ${state.phase}`);
 	}
-	if (warmup > 0) console.log(`Warmed up ${warmup}s of simulation`);
 
 	const started = Date.now();
 
